@@ -1,0 +1,16 @@
+# All dependencies are pre-installed on MARS (innate-os 0.5.0-rc10)
+# This file exists for local development only.
+#
+# Pre-installed on robot:
+#   google-genai==1.72.0
+#   opencv-python==4.11.0.86
+#   numpy==1.26.4
+#   inspireface==1.2.3.post5
+#
+# DO NOT install face_recognition or dlib — RAM is tight (678MB available)
+# and inspireface already handles face detection + recognition on-device.
+
+google-genai>=1.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+inspireface>=1.2.0

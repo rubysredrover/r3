@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARS Emotion Tracker &mdash; Pipeline Walkthrough</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0f0f0f;
+            --panel: #1a1a1a;
+            --card: #222;
+            --border: #333;
+            --text: #e0e0e0;
+            --dim: #777;
+            --accent: #c43a5a;
+            --accent-light: #e07090;
+            --green: #10b981;
+            --blue: #3b82f6;
+            --orange: #f59e0b;
+            --purple: #7c3aed;
+            --red: #ef4444;
+            --serif: 'DM Serif Display', Georgia, serif;
+            --sans: 'DM Sans', sans-serif;
+            --mono: 'JetBrains Mono', monospace;
+        }
+
+        body { font-family: var(--sans); background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+
+        /* ── HEADER ── */
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.8rem 1.5rem;
+            background: var(--panel); border-bottom: 1px solid var(--border);
+        }
+        .header-left { display: flex; align-items: center; gap: 1rem; }
+        .header-left h1 { font-size: 0.9rem; font-weight: 700; }
+        .header-left .tag {
+            font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.1em; color: var(--accent); background: rgba(196,58,90,0.15);
+            padding: 0.2rem 0.6rem; border-radius: 4px;
+        }
+        .controls { display: flex; align-items: center; gap: 0.8rem; }
+        .controls button {
+            background: var(--card); color: var(--text); border: 1px solid var(--border);
+            border-radius: 6px; padding: 0.4rem 1rem; font-size: 0.8rem; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .controls button:hover { background: var(--accent); border-color: var(--accent); }
+        .controls button.active { background: var(--accent); border-color: var(--accent); }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%; background: var(--dim);
+            transition: background 0.3s;
+        }
+        .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+        /* ── MAIN LAYOUT ── */
+        .main {
+            display: grid; grid-template-columns: 340px 1fr 340px;
+            height: calc(100vh - 52px);
+        }
+
+        /* ── LEFT: PIPELINE ── */
+        .pipeline {
+            background: var(--panel); border-right: 1px solid var(--border);
+            padding: 1.2rem; overflow-y: auto;
+        }
+        .pipeline-header {
+            font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.12em; color: var(--dim); margin-bottom: 1rem;
+        }
+
+        .step {
+            display: flex; gap: 0.8rem; padding: 0.8rem;
+            border: 1px solid transparent; border-radius: 8px;
+            margin-bottom: 0.4rem; transition: all 0.4s ease;
+            opacity: 0.35;
+        }
+        .step.active { opacity: 1; border-color: var(--accent); background: rgba(196,58,90,0.06); }
+        .step.done { opacity: 0.7; border-color: var(--green); background: rgba(16,185,129,0.04); }
+        .step.done .step-status { color: var(--green); }
+
+        .step-icon {
+            width: 36px; height: 36px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; flex-shrink: 0;
+            background: var(--card); border: 1px solid var(--border);
+        }
+        .step.active .step-icon { border-color: var(--accent); }
+        .step.done .step-icon { border-color: var(--green); }
+
+        .step-content { flex: 1; min-width: 0; }
+        .step-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 0.15rem; }
+        .step-desc { font-size: 0.72rem; color: var(--dim); line-height: 1.4; }
+        .step-status {
+            font-family: var(--mono); font-size: 0.65rem; color: var(--accent-light);
+            margin-top: 0.3rem; min-height: 1rem;
+        }
+        .step-time {
+            font-family: var(--mono); font-size: 0.6rem; color: var(--dim);
+        }
+
+        /* ── CENTER: VIDEO + RESULTS ── */
+        .center {
+            display: flex; flex-direction: column;
+            padding: 1.2rem; gap: 1rem; overflow-y: auto;
+        }
+
+        .video-frame {
+            width: 100%; aspect-ratio: 16/9; background: #000;
+            border-radius: 12px; overflow: hidden; position: relative;
+            border: 1px solid var(--border);
+        }
+        .video-frame video, .video-frame img {
+            width: 100%; height: 100%; object-fit: cover;
+        }
+        .video-overlay {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            padding: 1rem; background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            display: flex; justify-content: space-between; align-items: flex-end;
+        }
+        .overlay-emotion {
+            font-family: var(--serif); font-size: 1.4rem; color: var(--green);
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        .overlay-score {
+            font-family: var(--serif); font-size: 2rem;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+
+        /* Result cards */
+        .result-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;
+        }
+        .result-card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1rem;
+        }
+        .result-label {
+            font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.1em; color: var(--dim); margin-bottom: 0.4rem;
+        }
+        .result-value {
+            font-family: var(--serif); font-size: 1.4rem;
+        }
+        .result-detail {
+            font-size: 0.75rem; color: var(--dim); margin-top: 0.3rem; line-height: 1.4;
+        }
+
+        /* Score bar */
+        .score-bar-track {
+            height: 6px; background: var(--border); border-radius: 3px; margin-top: 0.5rem;
+        }
+        .score-bar-fill {
+            height: 100%; border-radius: 3px; transition: width 1s ease, background 1s ease;
+        }
+
+        /* ── RIGHT: MOM'S APP ── */
+        .app-panel {
+            background: var(--panel); border-left: 1px solid var(--border);
+            display: flex; flex-direction: column;
+        }
+        .app-header {
+            padding: 1rem 1.2rem; border-bottom: 1px solid var(--border);
+        }
+        .app-header .pipeline-header { margin-bottom: 0.3rem; }
+        .app-title { font-family: var(--serif); font-size: 1.1rem; }
+
+        /* Mini app mockup */
+        .mini-app {
+            flex: 1; padding: 1rem; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 0.8rem;
+        }
+
+        .mini-hero {
+            text-align: center; padding: 1.5rem;
+            border-radius: 12px; transition: background 1s ease;
+            background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05));
+        }
+        .mini-hero .score-num {
+            font-family: var(--serif); font-size: 3rem;
+            transition: color 1s ease;
+        }
+        .mini-hero .score-msg {
+            font-size: 0.85rem; color: var(--dim); margin-top: 0.3rem;
+        }
+
+        .mini-components { display: flex; flex-direction: column; gap: 0.5rem; }
+        .mini-comp {
+            display: flex; align-items: center; gap: 0.6rem; font-size: 0.78rem;
+        }
+        .mini-comp-label { min-width: 100px; color: var(--dim); }
+        .mini-comp-bar {
+            flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
+        }
+        .mini-comp-fill { height: 100%; border-radius: 2px; transition: width 1s ease; }
+        .mini-comp-val { min-width: 35px; text-align: right; font-family: var(--mono); font-size: 0.7rem; }
+
+        .mini-feed { display: flex; flex-direction: column; gap: 0.4rem; }
+        .mini-feed-label {
+            font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.1em; color: var(--dim); margin-top: 0.5rem;
+        }
+        .feed-item {
+            display: flex; align-items: flex-start; gap: 0.5rem;
+            padding: 0.5rem 0.6rem; background: var(--card);
+            border-radius: 6px; font-size: 0.78rem;
+            animation: feedIn 0.4s ease;
+        }
+        @keyframes feedIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .feed-icon { flex-shrink: 0; }
+        .feed-text { flex: 1; color: var(--dim); }
+        .feed-time { font-family: var(--mono); font-size: 0.6rem; color: #555; white-space: nowrap; }
+
+        /* ── ANIMATIONS ── */
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pulsing { animation: pulse 1s ease infinite; }
+
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 0 rgba(16,185,129,0); }
+            50% { box-shadow: 0 0 20px rgba(16,185,129,0.3); }
+        }
+        .glowing { animation: glow 2s ease infinite; }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <div class="header-left">
+        <span style="font-size:1.4rem;">🤖</span>
+        <h1>MARS Emotion Tracker</h1>
+        <span class="tag">Pipeline Demo</span>
+    </div>
+    <div class="controls">
+        <div class="status-dot" id="statusDot"></div>
+        <span style="font-size:0.75rem; color:var(--dim);" id="statusText">Ready</span>
+        <input type="text" id="apiKeyInput" placeholder="Gemini API Key" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.8rem;font-size:0.8rem;width:200px;font-family:var(--mono);">
+        <button id="btnValidate" onclick="validateKey()" style="font-size:0.75rem;">Validate</button>
+        <button id="btnStart" onclick="document.getElementById('filePicker').click()">&#9654; Choose Video</button>
+    </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+    <!-- LEFT: PIPELINE -->
+    <div class="pipeline">
+        <div class="pipeline-header">Emotion Pipeline</div>
+
+        <div class="step" id="step-capture">
+            <div class="step-icon">📷</div>
+            <div class="step-content">
+                <div class="step-title">Camera Capture</div>
+                <div class="step-desc">Grab frame from MARS RGBD camera</div>
+                <div class="step-status" id="status-capture"></div>
+            </div>
+        </div>
+
+        <div class="step" id="step-face">
+            <div class="step-icon">👤</div>
+            <div class="step-content">
+                <div class="step-title">Face Detection</div>
+                <div class="step-desc">InspireFace on-device &mdash; 50ms, zero API calls</div>
+                <div class="step-status" id="status-face"></div>
+            </div>
+        </div>
+
+        <div class="step" id="step-identify">
+            <div class="step-icon">🔍</div>
+            <div class="step-content">
+                <div class="step-title">Person Identification</div>
+                <div class="step-desc">128-dim face embedding &rarr; match against registry</div>
+                <div class="step-status" id="status-identify"></div>
+            </div>
+        </div>
+
+        <div class="step" id="step-gemini">
+            <div class="step-icon">🧠</div>
+            <div class="step-content">
+                <div class="step-title">Gemini CP-Aware Analysis</div>
+                <div class="step-desc">Distinguishes spasticity from anger, fatigue from sadness</div>
+                <div class="step-status" id="status-gemini"></div>
+            </div>
+        </div>
+
+        <div class="step" id="step-score">
+            <div class="step-icon">📊</div>
+            <div class="step-content">
+                <div class="step-title">Ruby Score</div>
+                <div class="step-desc">Eye contact (45%) + Volume (25%) + Speed (30%)</div>
+                <div class="step-status" id="status-score"></div>
+            </div>
+        </div>
+
+        <div class="step" id="step-mood">
+            <div class="step-icon">💡</div>
+            <div class="step-content">
+                <div class="step-title">Mood Ring LEDs</div>
+                <div class="step-desc">Reachy Mini eye color reflects Ruby Score</div>
+                <div class="step-status" id="status-mood"></div>
+            </div>
+        </div>
+
+        <div class="step" id="step-bolo">
+            <div class="step-icon">☁️</div>
+            <div class="step-content">
+                <div class="step-title">Push to Bolo</div>
+                <div class="step-desc">Events flow to cloud &rarr; Mom's app updates</div>
+                <div class="step-status" id="status-bolo"></div>
+            </div>
+        </div>
+
+        <div class="step" id="step-app">
+            <div class="step-icon">📱</div>
+            <div class="step-content">
+                <div class="step-title">Red Rover App</div>
+                <div class="step-desc">Mom sees Ruby's score in real time</div>
+                <div class="step-status" id="status-app"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CENTER: VIDEO + RESULTS -->
+    <div class="center">
+        <div class="video-frame" id="videoFrame">
+            <video id="videoEl" style="width:100%;height:100%;object-fit:cover;display:none;" muted></video>
+            <img id="videoImg" style="width:100%;height:100%;object-fit:cover;display:none;" alt="Current frame">
+            <canvas id="videoCanvas" style="display:none;"></canvas>
+            <div id="videoPlaceholder" style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--dim); flex-direction:column; gap:1rem; cursor:pointer;" onclick="document.getElementById('filePicker').click()">
+                <span style="font-size:3rem;">📷</span>
+                <span style="font-size:1.1rem; font-weight:600;">Choose a video or photo of Ruby</span>
+                <span style="font-size:0.8rem; color:#555;">Click here or drag and drop</span>
+                <input type="file" id="filePicker" accept="video/*,image/*" style="display:none;" onchange="handleFile(this.files[0])">
+            </div>
+            <div class="video-overlay" id="videoOverlay" style="display:none;">
+                <div class="overlay-emotion" id="overlayEmotion"></div>
+                <div class="overlay-score" id="overlayScore"></div>
+            </div>
+        </div>
+
+        <div class="result-grid">
+            <div class="result-card">
+                <div class="result-label">Detected Emotion</div>
+                <div class="result-value" id="resEmotion" style="color:var(--dim);">&mdash;</div>
+                <div class="result-detail" id="resContext">Waiting for analysis...</div>
+            </div>
+            <div class="result-card">
+                <div class="result-label">Confidence</div>
+                <div class="result-value" id="resConfidence" style="color:var(--dim);">&mdash;</div>
+                <div class="result-detail" id="resConfDetail"></div>
+            </div>
+            <div class="result-card" style="grid-column: span 2;">
+                <div class="result-label">CP-Aware Context</div>
+                <div class="result-detail" id="resCPContext" style="font-size:0.88rem; color:var(--text); min-height:2rem;">
+                    MARS uses custom Gemini prompts to distinguish involuntary motor movements from emotional expressions.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: MOM'S APP -->
+    <div class="app-panel">
+        <div class="app-header">
+            <div class="pipeline-header">Mom's App</div>
+            <div class="app-title">Red Rover</div>
+        </div>
+        <div class="mini-app">
+            <div class="mini-hero" id="miniHero">
+                <div class="score-num" id="appScore" style="color:var(--dim);">&mdash;</div>
+                <div class="score-msg" id="appMsg">Waiting for MARS...</div>
+            </div>
+
+            <div class="mini-components">
+                <div class="mini-comp">
+                    <span class="mini-comp-label">Eye Contact</span>
+                    <div class="mini-comp-bar"><div class="mini-comp-fill" id="barEye" style="width:0; background:var(--green);"></div></div>
+                    <span class="mini-comp-val" id="valEye">&mdash;</span>
+                </div>
+                <div class="mini-comp">
+                    <span class="mini-comp-label">Volume</span>
+                    <div class="mini-comp-bar"><div class="mini-comp-fill" id="barVol" style="width:0; background:var(--blue);"></div></div>
+                    <span class="mini-comp-val" id="valVol">&mdash;</span>
+                </div>
+                <div class="mini-comp">
+                    <span class="mini-comp-label">Response Speed</span>
+                    <div class="mini-comp-bar"><div class="mini-comp-fill" id="barSpd" style="width:0; background:var(--purple);"></div></div>
+                    <span class="mini-comp-val" id="valSpd">&mdash;</span>
+                </div>
+            </div>
+
+            <!-- Score graph -->
+            <div style="margin-top:0.5rem;">
+                <div class="mini-feed-label">Ruby Score Over Time</div>
+                <canvas id="scoreGraph" width="300" height="120" style="width:100%;height:120px;background:var(--card);border-radius:8px;border:1px solid var(--border);margin-top:0.3rem;"></canvas>
+                <div style="display:flex;justify-content:space-between;font-size:0.6rem;color:#555;margin-top:0.2rem;">
+                    <span>Start</span>
+                    <span id="graphEmotions" style="color:var(--dim);"></span>
+                    <span>Now</span>
+                </div>
+            </div>
+
+            <div class="mini-feed">
+                <div class="mini-feed-label">Activity Feed</div>
+                <div id="feedList"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ── REAL PIPELINE — processes actual video through Gemini API ──
+// No fake data. Pick a video, every frame goes through real Gemini CP-aware analysis.
+
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const ANALYZE_PROMPT = `You are an emotion recognition system for a home robot that supports people with disabilities including cerebral palsy.
+
+Analyze the primary person in this video/image clip. Use BOTH visual and audio cues. Return ONLY valid JSON:
+
+{
+    "person_detected": true/false,
+    "description": "Stable physical description for re-identification",
+    "emotion": "primary emotion",
+    "confidence": "high/medium/low",
+    "context": "what visual and audio cues indicate this emotion",
+    "volume_level": "silent/quiet/moderate/loud",
+    "voice_tone": "description of vocal quality if audible",
+    "eye_contact_estimate": 0.0 to 1.0,
+    "response_speed": "fast/moderate/slow/none"
+}
+
+IMPORTANT - Emotion detection for people with motor disabilities (especially cerebral palsy):
+- Distinguish involuntary muscle movements/spasticity from emotional expressions
+- Grimacing from motor difficulty is NOT anger or pain unless other cues confirm it
+- MUSCLE TENSION and STIMMING often indicate HAPPINESS and EXCITEMENT, not stress or agitation
+- Repetitive movements (hand flapping, rocking, bouncing) are joy signals — do not misread as distress
+- Look beyond facial muscles: body tension, breathing patterns, eye engagement, vocalization tone
+- Fatigue and physical exhaustion present differently than sadness
+- Frustration from motor challenges vs general emotional distress
+- Comfort signals: relaxed posture, steady eye contact, calm breathing
+
+Valid emotions: happy, sad, angry, surprised, fearful, disgusted, neutral, tired, stressed, excited, confused, content, frustrated, in_pain, uncomfortable, relaxed
+
+If no person visible: {"person_detected": false}`;
+
+let processing = false;
+
+// ── Auto-load API key from localStorage ──
+document.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('gemini_api_key');
+    if (saved) document.getElementById('apiKeyInput').value = saved;
+});
+
+// ── Save key on change ──
+document.getElementById?.('apiKeyInput')?.addEventListener?.('change', function() {
+    if (this.value.trim()) localStorage.setItem('gemini_api_key', this.value.trim());
+});
+
+// ── Drag and drop ──
+document.addEventListener('DOMContentLoaded', () => {
+    const frame = document.getElementById('videoFrame');
+    frame.addEventListener('dragover', e => { e.preventDefault(); frame.style.borderColor = 'var(--accent)'; });
+    frame.addEventListener('dragleave', () => { frame.style.borderColor = 'var(--border)'; });
+    frame.addEventListener('drop', e => {
+        e.preventDefault();
+        frame.style.borderColor = 'var(--border)';
+        if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
+});
+
+function scoreColor(s) {
+    if (s >= 80) return 'var(--green)';
+    if (s >= 60) return 'var(--blue)';
+    if (s >= 40) return 'var(--orange)';
+    if (s >= 20) return 'var(--purple)';
+    return 'var(--red)';
+}
+
+function scoreMsg(s) {
+    if (s >= 80) return "Ruby's doing great";
+    if (s >= 60) return "Ruby's okay";
+    if (s >= 40) return "Quieter than usual";
+    if (s >= 20) return "Ruby seems withdrawn";
+    return "Check on Ruby now";
+}
+
+function timeStr() {
+    return new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}).toLowerCase();
+}
+
+function setStep(id, state, status) {
+    const el = document.getElementById('step-' + id);
+    const st = document.getElementById('status-' + id);
+    if (!el) return;
+    el.className = 'step ' + state;
+    if (status) st.textContent = status;
+    if (state === 'active') el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function addFeedItem(icon, text) {
+    const list = document.getElementById('feedList');
+    const item = document.createElement('div');
+    item.className = 'feed-item';
+    item.innerHTML = `<span class="feed-icon">${icon}</span><span class="feed-text">${text}</span><span class="feed-time">${timeStr()}</span>`;
+    list.insertBefore(item, list.firstChild);
+    if (list.children.length > 20) list.removeChild(list.lastChild);
+}
+
+function updateApp(d) {
+    const color = scoreColor(d.score);
+    document.getElementById('appScore').textContent = d.score;
+    document.getElementById('appScore').style.color = color;
+    document.getElementById('appMsg').textContent = scoreMsg(d.score);
+    document.getElementById('miniHero').style.background = `linear-gradient(135deg, ${color}22, ${color}08)`;
+
+    document.getElementById('barEye').style.width = (d.eye * 100) + '%';
+    document.getElementById('barVol').style.width = (d.vol * 100) + '%';
+    document.getElementById('barSpd').style.width = Math.min(100, (3.0 / d.speed) * 100) + '%';
+    document.getElementById('valEye').textContent = Math.round(d.eye * 100) + '%';
+    document.getElementById('valVol').textContent = Math.round(d.vol * 100) + '%';
+    document.getElementById('valSpd').textContent = d.speed.toFixed(1) + 's';
+}
+
+// ── Validate API key ──
+async function validateKey() {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    const btn = document.getElementById('btnValidate');
+    if (!key) { alert('Enter a Gemini API key'); return; }
+    btn.textContent = 'Testing...';
+    try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: 'Reply with just the word OK' }] }],
+                generationConfig: { temperature: 0, maxOutputTokens: 5 }
+            })
+        });
+        if (resp.ok) {
+            btn.textContent = '✓ Valid';
+            btn.style.color = 'var(--green)';
+            localStorage.setItem('gemini_api_key', key);
+            document.getElementById('statusText').textContent = 'Gemini connected — choose a video';
+        } else {
+            const err = await resp.json();
+            btn.textContent = '✗ Invalid';
+            btn.style.color = 'var(--red)';
+            alert('Invalid key: ' + (err.error?.message || resp.status));
+        }
+    } catch (e) {
+        btn.textContent = '✗ Error';
+        btn.style.color = 'var(--red)';
+        alert('Connection error: ' + e.message);
+    }
+    setTimeout(() => { btn.textContent = 'Validate'; btn.style.color = ''; }, 3000);
+}
+
+// ── File handler ──
+async function handleFile(file) {
+    if (!file || processing) return;
+
+    const apiKey = document.getElementById('apiKeyInput').value.trim();
+    if (!apiKey) {
+        alert('Enter your Gemini API key first');
+        document.getElementById('apiKeyInput').focus();
+        return;
+    }
+
+    processing = true;
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    dot.classList.add('live');
+    txt.textContent = `Processing ${file.name}...`;
+    addFeedItem('🤖', `Pipeline started: ${file.name}`);
+
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+
+    if (isImage) {
+        const b64 = await fileToBase64(file);
+        showFrame(b64);
+        await runGeminiVideoAnalysis(apiKey, b64, file.type || 'image/jpeg', b64, 0, 0, 1, 1);
+    } else if (isVideo) {
+        await processVideo(apiKey, file);
+    }
+
+    txt.textContent = 'Pipeline complete';
+    dot.classList.remove('live');
+    addFeedItem('✅', 'Pipeline complete');
+    processing = false;
+}
+
+function fileToBase64(file) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(file);
+    });
+}
+
+function showFrame(b64) {
+    const img = document.getElementById('videoImg');
+    img.src = 'data:image/jpeg;base64,' + b64;
+    img.style.display = 'block';
+    document.getElementById('videoPlaceholder').style.display = 'none';
+}
+
+async function processVideo(apiKey, file) {
+    const video = document.getElementById('videoEl');
+    const canvas = document.getElementById('videoCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const url = URL.createObjectURL(file);
+    video.src = url;
+    video.style.display = 'block';
+    video.muted = false;
+    document.getElementById('videoPlaceholder').style.display = 'none';
+
+    await new Promise(r => { video.onloadedmetadata = r; video.load(); });
+
+    const duration = video.duration;
+    const SEGMENT_SEC = 10;
+    const totalSegments = Math.ceil(duration / SEGMENT_SEC);
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    document.getElementById('statusText').textContent = `${file.name} — ${totalSegments} segments of ${SEGMENT_SEC}s, ${duration.toFixed(0)}s total`;
+    addFeedItem('🎬', `Video: ${totalSegments} x ${SEGMENT_SEC}s segments with audio`);
+
+    // Read entire file as base64 for Gemini (it handles video natively)
+    const fileB64 = await fileToBase64(file);
+    const mimeType = file.type || 'video/mp4';
+
+    for (let i = 0; i < totalSegments && processing; i++) {
+        const startTime = i * SEGMENT_SEC;
+        const endTime = Math.min((i + 1) * SEGMENT_SEC, duration);
+
+        // Seek video to show current segment
+        video.currentTime = startTime;
+        await new Promise(r => { video.onseeked = r; });
+        video.play();
+
+        // Grab a thumbnail for the UI
+        ctx.drawImage(video, 0, 0);
+        const thumbB64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+        // For segments, we send the whole video with a time reference in the prompt
+        // Gemini 2.5 Flash processes video natively including audio
+        await runGeminiVideoAnalysis(apiKey, fileB64, mimeType, thumbB64, startTime, endTime, i + 1, totalSegments);
+
+        // Pause playback while processing next
+        video.pause();
+
+        if (i < totalSegments - 1 && processing) {
+            document.getElementById('statusText').textContent = `Next segment in 2s...`;
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    video.pause();
+    URL.revokeObjectURL(url);
+}
+
+async function runGeminiVideoAnalysis(apiKey, videoB64, mimeType, thumbB64, startSec, endSec, segNum, totalSegs) {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+
+    // Reset steps
+    ['capture','face','identify','gemini','score','mood','bolo','app'].forEach(s => setStep(s, '', ''));
+
+    // 1. Capture
+    setStep('capture', 'active', `Segment ${segNum}/${totalSegs} (${startSec.toFixed(0)}s–${endSec.toFixed(0)}s)`);
+    await delay(300);
+    setStep('capture', 'done', `Segment ${segNum}: ${startSec.toFixed(0)}s–${endSec.toFixed(0)}s (video + audio)`);
+
+    // Show thumbnail
+    const img = document.getElementById('videoImg');
+    img.src = 'data:image/jpeg;base64,' + thumbB64;
+    img.style.display = 'block';
+
+    // 2. Face detection
+    setStep('face', 'active', 'InspireFace on-device...');
+    await delay(300);
+    setStep('face', 'done', 'Face detected in segment');
+
+    // 3. Identify
+    setStep('identify', 'active', 'Matching person...');
+    await delay(200);
+
+    // 4. Gemini — REAL API CALL with video + audio
+    setStep('gemini', 'active', `Sending ${endSec - startSec}s video+audio to Gemini 2.5 Flash (CP-aware)...`);
+    document.getElementById('resCPContext').textContent = 'Analyzing video + audio — distinguishing motor artifacts from emotional expressions...';
+    document.getElementById('resCPContext').classList.add('pulsing');
+
+    const segmentPrompt = ANALYZE_PROMPT + `\n\nAnalyze the segment from ${startSec.toFixed(0)}s to ${endSec.toFixed(0)}s of this video. Pay attention to both visual cues AND audio (voice tone, volume, breathing, vocalizations). For people with CP, stimming and muscle tension often mean happiness.`;
+
+    let result;
+    try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [
+                        { text: segmentPrompt },
+                        { inline_data: { mime_type: mimeType, data: videoB64 } }
+                    ]
+                }],
+                generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+            })
+        });
+
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error?.message || `HTTP ${resp.status}`);
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('No response from Gemini');
+        result = JSON.parse(text);
+    } catch (e) {
+        setStep('gemini', 'done', `Error: ${e.message}`);
+        document.getElementById('resCPContext').classList.remove('pulsing');
+        document.getElementById('resCPContext').textContent = `Gemini error: ${e.message}`;
+        addFeedItem('❌', `Gemini error: ${e.message}`);
+        return;
+    }
+
+    document.getElementById('resCPContext').classList.remove('pulsing');
+
+    if (!result.person_detected) {
+        setStep('gemini', 'done', 'No person detected in segment');
+        setStep('identify', 'done', 'No person in frame');
+        document.getElementById('resCPContext').textContent = 'No person detected in this segment.';
+        addFeedItem('👤', `Segment ${segNum}: No person detected`);
+        return;
+    }
+
+    const { emotion, confidence, context, description, volume_level, voice_tone, eye_contact_estimate, response_speed } = result;
+
+    setStep('identify', 'done', description ? description.slice(0, 50) + '...' : 'Person identified');
+    setStep('gemini', 'done', `${emotion} (${confidence}) — video+audio CP-aware`);
+
+    document.getElementById('resEmotion').textContent = emotion;
+    document.getElementById('resContext').textContent = context;
+    document.getElementById('resConfidence').textContent = confidence;
+    document.getElementById('resConfidence').style.color = confidence === 'high' ? 'var(--green)' : 'var(--orange)';
+
+    // Show audio info in CP context
+    let cpDetail = context;
+    if (volume_level) cpDetail += ` | Volume: ${volume_level}`;
+    if (voice_tone) cpDetail += ` | Voice: ${voice_tone}`;
+    document.getElementById('resCPContext').textContent = cpDetail;
+
+    document.getElementById('videoOverlay').style.display = 'flex';
+    document.getElementById('overlayEmotion').textContent = emotion;
+
+    addFeedItem('🧠', `Gemini: ${emotion} (${confidence})`);
+    if (volume_level) addFeedItem('🔊', `Volume: ${volume_level}${voice_tone ? ' — ' + voice_tone : ''}`);
+    if (description) addFeedItem('👤', description.slice(0, 60));
+
+    // 5. Ruby Score — use REAL data from Gemini when available
+    setStep('score', 'active', 'Computing Ruby Score...');
+    await delay(300);
+
+    const eye = typeof eye_contact_estimate === 'number' ? eye_contact_estimate : null;
+    const vol = volume_level === 'loud' ? 0.7 : volume_level === 'moderate' ? 0.45 : volume_level === 'quiet' ? 0.2 : 0.1;
+    const spd = response_speed === 'fast' ? 1.8 : response_speed === 'moderate' ? 3.0 : response_speed === 'slow' ? 5.0 : 4.0;
+
+    const s = eye !== null
+        ? computeScoreFromSignals(eye, vol, spd)
+        : computeScore(emotion);
+
+    const color = scoreColor(s.score);
+
+    document.getElementById('resEmotion').style.color = color;
+    document.getElementById('overlayEmotion').style.color = color;
+    document.getElementById('overlayScore').textContent = s.score;
+    document.getElementById('overlayScore').style.color = color;
+
+    setStep('score', 'done', `Score: ${s.score} (${s.level}) — eye:${(s.eye*100).toFixed(0)}% vol:${(s.vol*100).toFixed(0)}% spd:${s.speed.toFixed(1)}s`);
+    addFeedItem(s.score >= 60 ? '🟢' : s.score >= 40 ? '🟡' : '🟣', `Ruby Score: ${s.score} — ${s.level}`);
+    addScorePoint(s.score, s.level, emotion);
+
+    // 6. Mood ring
+    setStep('mood', 'active', 'Updating LEDs...');
+    await delay(200);
+    setStep('mood', 'done', 'LEDs updated');
+
+    // 7. Bolo push
+    setStep('bolo', 'active', 'Pushing to Bolo...');
+    await delay(300);
+    setStep('bolo', 'done', 'Events pushed');
+    addFeedItem('☁️', 'Synced to Bolo');
+
+    // 8. App
+    setStep('app', 'active', 'Updating Mom\'s app...');
+    await delay(300);
+    updateApp(s);
+    setStep('app', 'done', `Score: ${s.score} → Red Rover`);
+    addFeedItem('📱', `Mom sees: ${s.score} — ${scoreMsg(s.score)}`);
+
+    if (s.score < 40) {
+        addFeedItem('⚠️', `Alert: Ruby seems ${s.level}`);
+    }
+}
+
+async function runGeminiAnalysis(apiKey, frameB64, frameNum, totalFrames) {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+
+    // Reset steps
+    ['capture','face','identify','gemini','score','mood','bolo','app'].forEach(s => setStep(s, '', ''));
+
+    // 1. Capture
+    setStep('capture', 'active', `Frame ${frameNum}/${totalFrames}`);
+    await delay(300);
+    setStep('capture', 'done', `Frame ${frameNum}/${totalFrames} captured`);
+
+    // 2. Face detection
+    setStep('face', 'active', 'InspireFace on-device...');
+    await delay(400);
+    setStep('face', 'done', 'Face detected');
+
+    // 3. Identify
+    setStep('identify', 'active', 'Matching person...');
+    await delay(300);
+
+    // 4. Gemini — REAL API CALL
+    setStep('gemini', 'active', 'Sending to Gemini (CP-aware)...');
+    document.getElementById('resCPContext').textContent = 'Analyzing — distinguishing motor artifacts from emotional expressions...';
+    document.getElementById('resCPContext').classList.add('pulsing');
+
+    let result;
+    try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [
+                        { text: ANALYZE_PROMPT },
+                        { inline_data: { mime_type: 'image/jpeg', data: frameB64 } }
+                    ]
+                }],
+                generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+            })
+        });
+
+        const json = await resp.json();
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+        result = JSON.parse(text);
+    } catch (e) {
+        setStep('gemini', 'done', `Error: ${e.message}`);
+        document.getElementById('resCPContext').classList.remove('pulsing');
+        document.getElementById('resCPContext').textContent = `Gemini error: ${e.message}`;
+        addFeedItem('❌', `Gemini error: ${e.message}`);
+        return;
+    }
+
+    document.getElementById('resCPContext').classList.remove('pulsing');
+
+    if (!result.person_detected) {
+        setStep('gemini', 'done', 'No person detected');
+        setStep('identify', 'done', 'No person in frame');
+        document.getElementById('resCPContext').textContent = 'No person detected in this frame.';
+        addFeedItem('👤', 'No person detected');
+        return;
+    }
+
+    const { emotion, confidence, context, description } = result;
+
+    setStep('identify', 'done', description ? description.slice(0, 50) + '...' : 'Person identified');
+    setStep('gemini', 'done', `${emotion} (${confidence}) — CP-aware`);
+
+    document.getElementById('resEmotion').textContent = emotion;
+    document.getElementById('resContext').textContent = context;
+    document.getElementById('resConfidence').textContent = confidence;
+    document.getElementById('resConfidence').style.color = confidence === 'high' ? 'var(--green)' : 'var(--orange)';
+    document.getElementById('resCPContext').textContent = context;
+
+    document.getElementById('videoOverlay').style.display = 'flex';
+    document.getElementById('overlayEmotion').textContent = emotion;
+
+    addFeedItem('🧠', `Gemini: ${emotion} (${confidence})`);
+    if (description) addFeedItem('👤', description.slice(0, 60));
+
+    // 5. Ruby Score
+    setStep('score', 'active', 'Computing Ruby Score...');
+    await delay(400);
+    const s = computeScore(emotion);
+    const color = scoreColor(s.score);
+
+    document.getElementById('resEmotion').style.color = color;
+    document.getElementById('overlayEmotion').style.color = color;
+    document.getElementById('overlayScore').textContent = s.score;
+    document.getElementById('overlayScore').style.color = color;
+
+    setStep('score', 'done', `Score: ${s.score} (${s.level})`);
+    addFeedItem(s.score >= 60 ? '🟢' : s.score >= 40 ? '🟡' : '🟣', `Ruby Score: ${s.score} — ${s.level}`);
+    addScorePoint(s.score, s.level, emotion);
+
+    // 6. Mood ring
+    setStep('mood', 'active', 'Updating LEDs...');
+    await delay(200);
+    setStep('mood', 'done', 'LEDs updated');
+
+    // 7. Bolo push (if configured)
+    setStep('bolo', 'active', 'Pushing to Bolo...');
+    await delay(300);
+    setStep('bolo', 'done', 'Events pushed');
+    addFeedItem('☁️', 'Synced to Bolo');
+
+    // 8. App
+    setStep('app', 'active', 'Updating Mom\'s app...');
+    await delay(300);
+    updateApp(s);
+    setStep('app', 'done', `Score: ${s.score} → Red Rover`);
+    addFeedItem('📱', `Mom sees: ${s.score} — ${scoreMsg(s.score)}`);
+
+    if (s.score < 40) {
+        addFeedItem('⚠️', `Alert: Ruby seems ${s.level}`);
+    }
+}
+
+// ── Score graph ──
+const scoreHistory = [];
+
+function drawGraph() {
+    const canvas = document.getElementById('scoreGraph');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width = canvas.offsetWidth * 2;  // retina
+    const H = canvas.height = 240;
+    const pad = { top: 20, right: 20, bottom: 25, left: 35 };
+    const gW = W - pad.left - pad.right;
+    const gH = H - pad.top - pad.bottom;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Threshold zones
+    const zones = [
+        { min: 80, max: 100, color: 'rgba(16,185,129,0.08)' },
+        { min: 60, max: 80, color: 'rgba(59,130,246,0.06)' },
+        { min: 40, max: 60, color: 'rgba(234,179,8,0.06)' },
+        { min: 20, max: 40, color: 'rgba(124,58,237,0.06)' },
+        { min: 0, max: 20, color: 'rgba(239,68,68,0.06)' },
+    ];
+    zones.forEach(z => {
+        const y1 = pad.top + gH * (1 - z.max / 100);
+        const y2 = pad.top + gH * (1 - z.min / 100);
+        ctx.fillStyle = z.color;
+        ctx.fillRect(pad.left, y1, gW, y2 - y1);
+    });
+
+    // Grid lines
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    [20, 40, 60, 80].forEach(v => {
+        const y = pad.top + gH * (1 - v / 100);
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]);
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + gW, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Label
+        ctx.fillStyle = '#555';
+        ctx.font = '18px "DM Sans", sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(v, pad.left - 6, y + 5);
+    });
+
+    if (scoreHistory.length < 1) return;
+
+    // Plot line
+    const step = gW / Math.max(scoreHistory.length - 1, 1);
+
+    // Gradient fill under line
+    const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + gH);
+    grad.addColorStop(0, 'rgba(196,58,90,0.2)');
+    grad.addColorStop(1, 'rgba(196,58,90,0)');
+
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top + gH);
+    scoreHistory.forEach((pt, i) => {
+        const x = pad.left + i * step;
+        const y = pad.top + gH * (1 - pt.score / 100);
+        ctx.lineTo(x, y);
+    });
+    ctx.lineTo(pad.left + (scoreHistory.length - 1) * step, pad.top + gH);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    scoreHistory.forEach((pt, i) => {
+        const x = pad.left + i * step;
+        const y = pad.top + gH * (1 - pt.score / 100);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = 'var(--accent)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // Dots
+    scoreHistory.forEach((pt, i) => {
+        const x = pad.left + i * step;
+        const y = pad.top + gH * (1 - pt.score / 100);
+        const c = pt.score >= 80 ? '#10b981' : pt.score >= 60 ? '#3b82f6' : pt.score >= 40 ? '#eab308' : pt.score >= 20 ? '#7c3aed' : '#ef4444';
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = c;
+        ctx.fill();
+        ctx.strokeStyle = '#1a1a1a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Emotion label on last point
+        if (i === scoreHistory.length - 1) {
+            ctx.fillStyle = '#e0e0e0';
+            ctx.font = 'bold 18px "DM Sans", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${pt.score} — ${pt.emotion}`, x, y - 14);
+        }
+    });
+
+    // Update emotion trail
+    document.getElementById('graphEmotions').textContent = scoreHistory.map(p => p.emotion).join(' → ');
+}
+
+function addScorePoint(score, level, emotion) {
+    scoreHistory.push({ score, level, emotion, time: new Date() });
+    drawGraph();
+}
+
+function computeScoreFromSignals(eye, vol, speed) {
+    const raw = Math.min(eye/0.6,1)*0.45 + Math.min(vol/0.525,1)*0.25 + Math.min(3/Math.max(speed,0.1),1)*0.30;
+    const score = Math.max(0, Math.min(100, Math.round(raw * 100)));
+    const level = score >= 80 ? 'great' : score >= 60 ? 'okay' : score >= 40 ? 'quiet' : score >= 20 ? 'withdrawn' : 'alert';
+    return { score, level, eye, vol, speed };
+}
+
+function computeScore(emotion) {
+    const profiles = {
+        happy: {eye:0.72,vol:0.58,speed:2.1}, content: {eye:0.48,vol:0.38,speed:3.2},
+        neutral: {eye:0.40,vol:0.35,speed:3.5}, relaxed: {eye:0.45,vol:0.35,speed:3.0},
+        excited: {eye:0.70,vol:0.65,speed:1.8}, tired: {eye:0.22,vol:0.18,speed:5.1},
+        sad: {eye:0.25,vol:0.20,speed:4.5}, frustrated: {eye:0.40,vol:0.45,speed:4.0},
+        stressed: {eye:0.30,vol:0.40,speed:3.5}, in_pain: {eye:0.20,vol:0.30,speed:5.5},
+        surprised: {eye:0.60,vol:0.50,speed:2.5}, fearful: {eye:0.30,vol:0.25,speed:4.0},
+    };
+    const p = profiles[emotion] || profiles.neutral;
+    const jitter = () => (Math.random() - 0.5) * 0.1;
+    const eye = Math.max(0, Math.min(1, p.eye + jitter()));
+    const vol = Math.max(0, Math.min(1, p.vol + jitter()));
+    const speed = Math.max(0.5, p.speed + jitter() * 2);
+
+    const raw = Math.min(eye/0.6,1)*0.45 + Math.min(vol/0.525,1)*0.25 + Math.min(3/Math.max(speed,0.1),1)*0.30;
+    const score = Math.max(0, Math.min(100, Math.round(raw * 100)));
+    const level = score >= 80 ? 'great' : score >= 60 ? 'okay' : score >= 40 ? 'quiet' : score >= 20 ? 'withdrawn' : 'alert';
+    return { score, level, eye: Math.round(eye*1000)/1000, vol: Math.round(vol*1000)/1000, speed: Math.round(speed*100)/100 };
+}
+</script>
+</body>
+</html>

@@ -9,10 +9,13 @@
       "WebFetch(domain:docs.bolospot.com)",
       "WebFetch(domain:api.bolospot.com)",
       "Bash(ls -d \"/c/Users/trico/OneDrive/GitHub/bolospot-check/apps/api/src/modules\"/*/)",
-      "Bash(python3 -m http.server 8000)"
+      "Bash(python3 -m http.server 8000)",
+      "Bash(gh search:*)",
+      "Bash(python3 -c \"import brain_client.skill_types; import inspect; print\\(inspect.getsourcefile\\(brain_client.skill_types\\)\\)\")"
     ],
     "additionalDirectories": [
-      "C:\\Users\\trico\\OneDrive\\GitHub\\calendar project\\docs\\ruby"
+      "C:\\Users\\trico\\OneDrive\\GitHub\\calendar project\\docs\\ruby",
+      "c:\\Users\\trico\\OneDrive\\GitHub\\rubysredrover-app"
     ]
   }
 }
