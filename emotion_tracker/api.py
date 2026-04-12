@@ -54,6 +54,10 @@ class RedRoverHandler(BaseHTTPRequestHandler):
             self._handle_history()
         elif self.path == "/api/mood/summary":
             self._handle_summary()
+        elif self.path == "/api/score":
+            self._handle_score()
+        elif self.path == "/api/score/alert":
+            self._handle_alert()
         elif self.path == "/api/status":
             self._handle_status()
         elif self.path == "/api/people":
@@ -106,6 +110,50 @@ class RedRoverHandler(BaseHTTPRequestHandler):
                 "color": {"r": color[0], "g": color[1], "b": color[2]},
                 "in_frame": state.get("in_frame", False),
             })
+
+    def _handle_score(self):
+        """Ruby Score: current score, level, color, and trend."""
+        with PersonRegistry() as reg:
+            primary = reg.get_primary_person()
+            if not primary:
+                self._send(200, {"score": None, "message": "No one registered yet."})
+                return
+
+            score_color = reg.get_score_for_color(primary["id"])
+            alert = reg.check_alert_condition(primary["id"])
+            history = reg.get_ruby_score_history(primary["id"], limit=10)
+
+            if not score_color:
+                self._send(200, {"score": None, "message": "No score data yet."})
+                return
+
+            r, g, b = score_color["color"]
+            hex_color = f"#{r:02x}{g:02x}{b:02x}"
+
+            self._send(200, {
+                "name": primary["name"],
+                "score": score_color["score"],
+                "level": score_color["level"],
+                "hex": hex_color,
+                "color": {"r": r, "g": g, "b": b},
+                "fw_color": score_color["fw_color"],
+                "mode": score_color["mode"],
+                "trend": alert["trend"],
+                "alert": alert["should_alert"],
+                "alert_reason": alert["reason"],
+                "history": history[:10],
+            })
+
+    def _handle_alert(self):
+        """Should Mom be alerted right now?"""
+        with PersonRegistry() as reg:
+            primary = reg.get_primary_person()
+            if not primary:
+                self._send(200, {"should_alert": False})
+                return
+            alert = reg.check_alert_condition(primary["id"])
+            alert["name"] = primary["name"]
+            self._send(200, alert)
 
     def _handle_history(self):
         with PersonRegistry() as reg:

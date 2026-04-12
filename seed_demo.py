@@ -9,6 +9,7 @@ of mood readings that tell a story.
 """
 
 import sqlite3
+import random
 from datetime import datetime
 
 DB_PATH = "/home/jetson1/emotion_tracker/people.db"
@@ -29,6 +30,18 @@ conn.executescript("""
         emotion TEXT NOT NULL,
         confidence TEXT,
         context TEXT,
+        timestamp TEXT NOT NULL,
+        FOREIGN KEY (person_id) REFERENCES people(id)
+    );
+    CREATE TABLE IF NOT EXISTS ruby_score_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        person_id INTEGER NOT NULL,
+        eye_contact REAL NOT NULL,
+        volume REAL NOT NULL,
+        response_latency REAL NOT NULL,
+        score INTEGER NOT NULL,
+        level TEXT NOT NULL,
+        label INTEGER,
         timestamp TEXT NOT NULL,
         FOREIGN KEY (person_id) REFERENCES people(id)
     );
@@ -78,8 +91,58 @@ for time_str, emotion, confidence, context in moods:
         (emotion, confidence, context, ts)
     )
 
+# --- Ruby Score signal profiles per emotion ---
+# Maps emotion → (eye_contact_range, volume_range, response_latency_range, label_range)
+# These reflect Ruby's real patterns: CP means motor signals ≠ emotional signals
+signal_profiles = {
+    "happy":      ((0.5, 0.75), (0.45, 0.65), (1.5, 2.5), (80, 95)),
+    "content":    ((0.35, 0.55), (0.30, 0.45), (2.0, 3.5), (65, 80)),
+    "neutral":    ((0.25, 0.45), (0.25, 0.40), (2.5, 4.0), (50, 65)),
+    "tired":      ((0.15, 0.30), (0.15, 0.25), (4.0, 6.0), (30, 45)),
+    "frustrated": ((0.30, 0.50), (0.35, 0.55), (3.0, 5.0), (35, 55)),
+    # frustrated has STEADY eye contact — it's motor, not emotional for Ruby
+}
+
+random.seed(42)  # reproducible
+
+def jitter(low, high):
+    return round(random.uniform(low, high), 3)
+
+conn.execute("DELETE FROM ruby_score_log WHERE person_id = 1")
+
+for time_str, emotion, confidence, context in moods:
+    ts = f"{today}T{time_str}:00"
+    profile = signal_profiles.get(emotion, signal_profiles["neutral"])
+    eye_r, vol_r, lat_r, label_r = profile
+
+    eye_contact = jitter(*eye_r)
+    volume = jitter(*vol_r)
+    response_latency = jitter(*lat_r)
+    label = random.randint(*label_r)
+
+    # compute score from hand-tuned weights (same as RubyScoreEngine v0)
+    eye_score = min(eye_contact / 0.6, 1.0)
+    vol_score = min(volume / 0.525, 1.0)
+    spd_score = min(3.0 / max(response_latency, 0.1), 1.0)
+    raw = eye_score * 0.45 + vol_score * 0.25 + spd_score * 0.30
+    score = max(0, min(100, int(round(raw * 100))))
+
+    if score >= 80: level = "great"
+    elif score >= 60: level = "okay"
+    elif score >= 40: level = "quiet"
+    elif score >= 20: level = "withdrawn"
+    else: level = "alert"
+
+    conn.execute(
+        """INSERT INTO ruby_score_log
+           (person_id, eye_contact, volume, response_latency, score, level, label, timestamp)
+           VALUES (1, ?, ?, ?, ?, ?, ?, ?)""",
+        (eye_contact, volume, response_latency, score, level, label, ts)
+    )
+
 conn.commit()
 conn.close()
 
 print(f"Seeded {len(moods)} mood readings for Ruby")
+print(f"Seeded {len(moods)} ruby_score signals (with caregiver labels)")
 print(f"DB: {DB_PATH}")

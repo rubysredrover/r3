@@ -1,157 +1,151 @@
-"""Mood ring LED controller via /light_command ROS2 service.
+"""Mood ring LED controller for Reachy Mini eyes via serial.
 
-Maps Ruby's current emotion to a color on the Reachy Mini eye lights
-so Mom or PCA can get a vibe check at a glance.
+Drives the Reachy Mini eye LEDs based on Ruby Score levels.
+Uses the reachy_eyes library (serial/USB) for direct hardware control.
 
-Service: /light_command (maurice_msgs/srv/LightCommand)
-  mode: OFF=0, SOLID=1, BLINK=2, RING=3
-  interval: animation speed in ms (1-10000)
-  r, g, b: color (0-255)
+Score-to-eyes mapping:
+  80-100 (great):     GREEN, calm energy, natural blinking
+  60-80  (okay):      CYAN, low energy
+  40-60  (quiet):     AMBER, no energy (still, watchful)
+  20-40  (withdrawn): MAGENTA, pulsing energy (blink effect)
+  0-20   (alert):     RED, high energy, startle effect → alert Mom
 """
 
+import time
 import threading
 
 try:
-    import rclpy
-    from rclpy.node import Node
-    ROS2_AVAILABLE = True
+    from reachy_eyes import ReachyEyes, EyesDevice, Color
+    REACHY_EYES_AVAILABLE = True
 except ImportError:
-    ROS2_AVAILABLE = False
+    REACHY_EYES_AVAILABLE = False
 
 
-# Emotion-to-color mapping (RGB tuples)
-MOOD_COLORS = {
-    # Positive
-    "happy":       (255, 223, 0),    # warm yellow
-    "excited":     (255, 140, 0),    # bright orange
-    "content":     (100, 220, 100),  # soft green
-    "relaxed":     (100, 180, 255),  # calm blue
+# Ruby Score level → Reachy eyes config
+SCORE_EYES = {
+    "great":     {"color": Color.GREEN,   "intensity": 0.7, "energy": 0.15},
+    "okay":      {"color": Color.CYAN,    "intensity": 0.6, "energy": 0.1},
+    "quiet":     {"color": Color.AMBER,   "intensity": 0.5, "energy": 0.0},
+    "withdrawn": {"color": Color.MAGENTA, "intensity": 0.7, "energy": 0.4},
+    "alert":     {"color": Color.RED,     "intensity": 0.9, "energy": 0.6},
+} if REACHY_EYES_AVAILABLE else {}
 
-    # Neutral
-    "neutral":     (180, 180, 255),  # soft lavender
-
-    # Negative / concern
-    "sad":         (70,  70,  200),  # deep blue
-    "tired":       (120, 80,  180),  # muted purple
-    "confused":    (200, 200, 100),  # pale yellow
-    "stressed":    (255, 100, 50),   # amber-orange
-    "frustrated":  (255, 60,  30),   # red-orange
-    "angry":       (255, 0,   0),    # red
-    "fearful":     (180, 0,   255),  # violet
-
-    # Urgent
-    "in_pain":     (255, 0,   60),   # urgent red-pink
-    "uncomfortable": (255, 80, 80),  # warm red
-
-    # Fallback
-    "unknown":     (100, 100, 100),  # dim gray
+# Legacy emotion-to-firmware-color (fallback when score isn't available)
+EMOTION_COLORS = {
+    "happy": "GREEN", "excited": "AMBER", "content": "GREEN", "relaxed": "CYAN",
+    "neutral": "CYAN", "sad": "BLUE", "tired": "BLUE", "confused": "AMBER",
+    "stressed": "AMBER", "frustrated": "MAGENTA", "angry": "RED", "fearful": "MAGENTA",
+    "in_pain": "RED", "uncomfortable": "RED",
 }
 
-# Emotions that should blink instead of solid
 BLINK_EMOTIONS = {"in_pain", "frustrated", "fearful"}
-
-# LightCommand mode constants
-MODE_OFF = 0
-MODE_SOLID = 1
-MODE_BLINK = 2
-MODE_RING = 3
 
 
 class MoodRing:
-    """Controls the Reachy Mini eye lights via /light_command ROS2 service."""
+    """Controls the Reachy Mini eye lights via reachy_eyes serial library."""
 
     def __init__(self):
         self.current_emotion = None
         self.current_color = None
-        self._client = None
-        self._node = None
+        self.current_level = None
+        self._eyes = None
 
-        if ROS2_AVAILABLE:
+        if REACHY_EYES_AVAILABLE:
             try:
-                self._setup_ros2()
+                self._setup_eyes()
             except Exception as e:
-                print(f"[Mood Ring] ROS2 setup failed: {e}")
+                print(f"[Mood Ring] Reachy eyes setup failed: {e}")
 
-    def _setup_ros2(self):
-        """Create a ROS2 service client for /light_command."""
-        # import here to avoid issues if maurice_msgs isn't available
-        from maurice_msgs.srv import LightCommand
-        self._LightCommand = LightCommand
+    def _setup_eyes(self):
+        """Discover and connect to Reachy Mini eyes over serial."""
+        device = EyesDevice.discover()
+        self._eyes = ReachyEyes(device)
+        self._eyes.enable_blinking()
+        print("[Mood Ring] Connected to Reachy Mini eyes (serial)")
 
-        if not rclpy.ok():
-            rclpy.init()
+    def set_score(self, score_color):
+        """Update the eyes based on Ruby Score query result.
 
-        self._node = rclpy.create_node("mood_ring")
-        self._client = self._node.create_client(LightCommand, "/light_command")
-        print("[Mood Ring] Connected to /light_command service")
-
-    def set_mood(self, emotion: str):
-        """Update the mood ring color based on detected emotion."""
-        if emotion == self.current_emotion:
-            return  # no change needed
-
-        self.current_emotion = emotion
-        color = MOOD_COLORS.get(emotion, MOOD_COLORS["unknown"])
-        self.current_color = color
-
-        if emotion in BLINK_EMOTIONS:
-            mode = MODE_BLINK
-            interval = 500  # fast blink for distress
-        else:
-            mode = MODE_SOLID
-            interval = 0
-
-        self._send_command(color, mode, interval)
-        print(f"[Mood Ring] {emotion} → RGB{color} {'(blinking)' if mode == MODE_BLINK else ''}")
-
-    def _send_command(self, color: tuple, mode: int = MODE_SOLID, interval: int = 0):
-        """Send a color command to the /light_command service."""
-        r, g, b = color
-
-        if self._client is None:
-            # fallback: just log
+        Args:
+            score_color: dict from PersonRegistry.get_score_for_color()
+                         with keys: score, level, mode, color
+        """
+        if score_color is None:
             return
 
-        try:
-            request = self._LightCommand.Request()
-            request.mode = mode
-            request.interval = interval
-            request.r = r
-            request.g = g
-            request.b = b
+        level = score_color["level"]
+        if level == self.current_level:
+            return  # no change
 
-            future = self._client.call_async(request)
-            rclpy.spin_until_future_complete(self._node, future, timeout_sec=2.0)
+        self.current_level = level
+        self.current_color = score_color["color"]
 
-            if future.result() is not None:
-                result = future.result()
-                if not result.success:
-                    print(f"[Mood Ring] Service error: {result.message}")
-            else:
-                print("[Mood Ring] Service call timed out")
+        if self._eyes is None:
+            print(f"[Mood Ring] score={score_color['score']} ({level}) [no hardware]")
+            return
 
-        except Exception as e:
-            print(f"[Mood Ring] Error: {e}")
+        config = SCORE_EYES.get(level, SCORE_EYES["quiet"])
+        self._eyes.set_color(config["color"])
+        self._eyes.set_intensity(config["intensity"])
+        self._eyes.set_energy(config["energy"])
+
+        # startle effect on alert transitions to draw attention
+        if level == "alert":
+            self._eyes.startle()
+
+        print(f"[Mood Ring] score={score_color['score']} ({level}) "
+              f"-> {config['color']} intensity={config['intensity']} "
+              f"energy={config['energy']}")
+
+    def set_mood(self, emotion: str):
+        """Update the eyes based on detected emotion (legacy/fallback)."""
+        if emotion == self.current_emotion:
+            return
+
+        self.current_emotion = emotion
+        fw_color = EMOTION_COLORS.get(emotion, "WHITE")
+
+        if self._eyes is None:
+            print(f"[Mood Ring] {emotion} -> {fw_color} [no hardware]")
+            return
+
+        self._eyes.set_color(fw_color)
+
+        if emotion in BLINK_EMOTIONS:
+            self._eyes.set_energy(0.5)
+            self._eyes.startle()
+        else:
+            self._eyes.set_energy(0.1)
+
+        print(f"[Mood Ring] {emotion} -> {fw_color}")
 
     def beacon(self, duration_sec: int = 15):
-        """Activate Find My Ruby beacon — rainbow ring animation."""
-        self._send_command((255, 0, 255), MODE_RING, 200)
+        """Activate Find My Ruby beacon — alternating eye animation."""
+        if self._eyes is None:
+            print(f"[Mood Ring] BEACON (no hardware)")
+            return
+
         print(f"[Mood Ring] BEACON ON for {duration_sec}s")
-
-        import time
-        time.sleep(duration_sec)
-
-        # restore current mood
-        if self.current_emotion:
-            self.set_mood(self.current_emotion)
-        else:
-            self.clear()
-
+        self._eyes.weewoo(duration=duration_sec)
         print("[Mood Ring] BEACON OFF")
 
+        # restore current state
+        if self.current_level:
+            config = SCORE_EYES.get(self.current_level, SCORE_EYES["quiet"])
+            self._eyes.set_color(config["color"])
+            self._eyes.set_intensity(config["intensity"])
+            self._eyes.set_energy(config["energy"])
+
     def clear(self):
-        """Turn off the mood ring."""
+        """Turn off the eyes."""
         self.current_emotion = None
         self.current_color = None
-        self._send_command((0, 0, 0), MODE_OFF, 0)
+        self.current_level = None
+        if self._eyes:
+            self._eyes.off()
         print("[Mood Ring] Off")
+
+    def cleanup(self):
+        """Clean up serial connection."""
+        if self._eyes:
+            self._eyes.cleanup()

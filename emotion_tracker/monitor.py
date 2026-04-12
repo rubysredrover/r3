@@ -13,6 +13,7 @@ from .detector import EmotionDetector, PersonEmotion
 from .face_encoder import FaceEncoder, INSPIREFACE_AVAILABLE
 from .mood_ring import MoodRing
 from .person_registry import PersonRegistry
+from .ruby_score import RubyScoreEngine, RubySignals
 
 
 # Adaptive timing intervals (seconds)
@@ -44,6 +45,7 @@ class EmotionMonitor:
         self.registry = registry
         self.face_encoder = FaceEncoder() if INSPIREFACE_AVAILABLE else None
         self.mood_ring = mood_ring or MoodRing()
+        self.ruby_score = RubyScoreEngine()
 
         # adaptive state
         self.last_emotion = None
@@ -51,6 +53,7 @@ class EmotionMonitor:
         self.current_interval = INTERVAL_NO_PERSON
         self.scan_count = 0
         self.verbose_scans = 3  # full detail for first N scans
+        self._last_prompt_time = None  # for response latency tracking
 
     def _identify_and_read(self, frame):
         """Fast path: use inspireface for identity + basic emotion (on-device).
@@ -125,6 +128,21 @@ class EmotionMonitor:
 
         if self.stable_count >= 3:
             self.current_interval = INTERVAL_STABLE
+
+    def _alert_mom(self, person_id, alert):
+        """Alert Mom when Ruby Score triggers a concern."""
+        person = self.registry.get_person(person_id)
+        name = person["name"] if person else "Ruby"
+        reason = alert["reason"]
+        score = alert["score"]
+        print(f"[ALERT] {name}: {reason} (score={score}, trend={alert['trend']})")
+        speak(f"Sending an update to Mom. {name}'s score is {score}.")
+        # TODO: send via Bolo relay or Twilio to Mom's phone
+        try:
+            from .api import update_api_state
+            update_api_state(alert_active=True, alert_reason=reason, alert_score=score)
+        except Exception:
+            pass
 
     def _on_mood_change(self, person, old_mood, new_emotion):
         """Called when a tracked person's mood changes."""
@@ -230,15 +248,54 @@ class EmotionMonitor:
                 self._on_mood_change(person, last_mood, emotion)
 
         self._adapt_interval(emotion)
-        self.mood_ring.set_mood(emotion)
+
+        # --- Ruby Score: compute, log, drive lights + alerts ---
+        face_data = self.face_encoder.detect_and_analyze(frame) if self.face_encoder else None
+        eye_contact = face_data.get("eye_contact_ratio", 0.3) if face_data else 0.3
+        volume = face_data.get("volume_level", 0.3) if face_data else 0.3
+        response_latency = 3.0  # default; updated when MARS prompts Ruby
+        if self._last_prompt_time is not None:
+            response_latency = time.time() - self._last_prompt_time
+            self._last_prompt_time = None
+
+        signals = RubySignals(
+            eye_contact_ratio=eye_contact,
+            volume_level=volume,
+            response_latency=response_latency,
+        )
+        score_result = self.ruby_score.compute(signals)
+
+        # log score to DB
+        self.registry.log_ruby_score(
+            person_id, eye_contact, volume, response_latency,
+            score_result["score"], score_result["level"],
+        )
+
+        # query DB for color decision and set lights
+        score_color = self.registry.get_score_for_color(person_id)
+        if score_color:
+            self.mood_ring.set_score(score_color)
+
+        # query DB for alert condition
+        alert = self.registry.check_alert_condition(person_id)
+        if alert["should_alert"]:
+            self._alert_mom(person_id, alert)
 
         if verbose:
-            print(f"  Mood ring:   {emotion}")
+            print(f"  Ruby Score:  {score_result['score']} ({score_result['level']})")
+            if score_color:
+                print(f"  Lights:      RGB{score_color['color']} ({score_color['mode']})")
+            if alert["should_alert"]:
+                print(f"  ALERT:       {alert['reason']}")
+            print(f"  Trend:       {alert['trend']}")
             print(f"  Next scan:   {self.current_interval}s")
             if self.scan_count == self.verbose_scans:
                 print(f"\n  (Switching to compact output)")
         else:
-            print(f"[{emotion}] next scan in {self.current_interval}s")
+            level = score_result['level']
+            score = score_result['score']
+            prefix = "ALERT " if alert["should_alert"] else ""
+            print(f"[{prefix}{level} ({score})] next scan in {self.current_interval}s")
         return self.current_interval
 
     def run(self):
