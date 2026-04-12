@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:news.ycombinator.com)",
+      "Bash(ls /c/Users/trico/OneDrive/GitHub/rubysredrover/red-rover-v*.html)",
+      "Read(//c/Users/trico/OneDrive/Desktop/**)",
+      "WebFetch(domain:bolospot.com)",
+      "WebFetch(domain:docs.bolospot.com)",
+      "WebFetch(domain:api.bolospot.com)",
+      "Bash(ls -d \"/c/Users/trico/OneDrive/GitHub/bolospot-check/apps/api/src/modules\"/*/)",
+      "Bash(python3 -m http.server 8000)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\trico\\OneDrive\\GitHub\\calendar project\\docs\\ruby"
+    ]
+  }
+}
