@@ -80,6 +80,31 @@ flowchart TD
 - **Multimodal Understanding** — handles audio and video processing beyond on-device capability; produces text descriptions fed back into Anima
 - **VLA (Vision-Language-Action)** — robot action planning for physical responses in the environment
 
+Sun Apr 12 03:52:02 2026
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.195.03             Driver Version: 570.195.03     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5090        On  |   00000000:00:07.0 Off |                  N/A |
+|  0%   34C    P8             26W /  499W |       1MiB /  32607MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+26B Google Gemma 4 from Hugging Face 🤗: 
+	ggml-org/gemma-4-26B-A4B-it-GGUF
+
+
 ## Sense & Regulate Loop
 
 1. Sensory input arrives (camera, mic, or external text from Mom's app)
