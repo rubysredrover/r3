@@ -8,6 +8,16 @@ Starts the Red Rover API on port 8080 for Mom's app.
 
 import argparse
 import os
+from pathlib import Path
+
+# load .env from script directory if present
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    for line in _env_path.read_text().strip().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip())
 
 import rclpy
 
@@ -22,7 +32,7 @@ from emotion_tracker.api import start_api
 def main():
     parser = argparse.ArgumentParser(description="MARS Emotion Tracker")
     parser.add_argument("--api-key", help="Gemini API key (or set GEMINI_API_KEY env var)")
-    parser.add_argument("--camera-topic", default="/mars/main_camera/left/image_rect_color",
+    parser.add_argument("--camera-topic", default="/mars/main_camera/left/image_raw",
                         help="ROS2 camera topic (default: main camera)")
     parser.add_argument("--api-port", type=int, default=8080,
                         help="Red Rover API port (default: 8080)")

@@ -58,7 +58,7 @@ Match on stable physical features (hair, build, glasses, age range). Ignore tran
 class GeminiDetector(EmotionDetector):
     """Cloud-based emotion detection via Gemini Vision API."""
 
-    def __init__(self, api_key=None, model="gemini-2.0-flash"):
+    def __init__(self, api_key=None, model="gemini-2.5-flash"):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY required — set env var or pass api_key")
@@ -71,7 +71,7 @@ class GeminiDetector(EmotionDetector):
             contents=[
                 types.Content(
                     parts=[
-                        types.Part.from_text(ANALYZE_PROMPT),
+                        types.Part.from_text(text=ANALYZE_PROMPT),
                         types.Part.from_bytes(
                             data=base64.b64decode(frame_base64),
                             mime_type="image/jpeg",

@@ -6,6 +6,17 @@
 
 ---
 
+## Built With
+
+- [Innate MARS](https://www.innate.bot/) — the robot (innate-os 0.5.0-rc10)
+- [Google Gemini 2.0 Flash](https://aistudio.google.com) — CP-aware emotion analysis (cloud, called only on mood changes)
+- [InspireFace](https://github.com/HyperInspire/InspireFace) — on-device face recognition + basic emotion (pre-installed on MARS)
+- [OpenCV](https://opencv.org/) — camera capture (pre-installed on MARS)
+- SQLite — because it's on a robot and it just works
+- **Zero new packages installed on the robot** — everything was already there
+
+---
+
 ## MARS Baseline (what's already on the robot)
 
 Verified via SSH on 2026-04-11. These came pre-installed with innate-os 0.5.0-rc10.
@@ -254,6 +265,10 @@ Face recognition is **already on-device** via inspireface. Only emotion classifi
 | 2026-04-11 | InspireFace verified: SDK loads, Pikachu model downloads. HF_ENABLE_FACE_EMOTION flag exists but emotion output not yet confirmed on a live face. |
 | 2026-04-11 | Confirmed rclpy, cv_bridge, brain_client all available. Fully native innate-os integration. |
 | 2026-04-11 | Rewrote camera.py for ROS2 topics. Added skills to ~/skills/. Updated deploy.sh. |
+| 2026-04-12 | Red Rover deployed to Cloud Run: https://red-rover-650440848480.us-central1.run.app |
+| 2026-04-12 | Bolo accounts created: @mars_ruby, @rubys_mom, @pca_jane. Grants live. |
+| 2026-04-12 | bolo_guard.py: demo mode (never blocks), set BOLO_ENFORCE=true for production. |
+| 2026-04-12 | Ruby Score engine added (eye contact + volume + response speed, on-device). |
 | 2026-04-11 | MARS registered as Bolo widget (slug: `mars`, ID: `cmnuyz5mv000ba6jvhiluitkb`). 8 scopes: mood:read, mood:history, mood:notify, location:status, location:beacon, person:register, person:list, settings:manage. |
 | 2026-04-11 | Red Rover (Mom's app) built as standalone React/Vite app at rubysredrover-app/. Talks to MARS API on port 8080. |
 | 2026-04-11 | LED control confirmed: `/light_command` ROS2 service (`maurice_msgs/srv/LightCommand`). Modes: OFF=0, SOLID=1, BLINK=2, RING=3. RGB 0-255. Interval in ms. |

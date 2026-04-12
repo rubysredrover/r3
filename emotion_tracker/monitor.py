@@ -49,6 +49,8 @@ class EmotionMonitor:
         self.last_emotion = None
         self.stable_count = 0
         self.current_interval = INTERVAL_NO_PERSON
+        self.scan_count = 0
+        self.verbose_scans = 3  # full detail for first N scans
 
     def _identify_and_read(self, frame):
         """Fast path: use inspireface for identity + basic emotion (on-device).
@@ -145,13 +147,31 @@ class EmotionMonitor:
         3. If mood changed or distress → call Gemini for CP-aware analysis
         4. Log mood, update mood ring, adapt scan timing
         """
+        self.scan_count += 1
+        verbose = self.scan_count <= self.verbose_scans
+
+        if verbose:
+            print(f"\n{'='*50}")
+            print(f"[Scan #{self.scan_count}] Analyzing...")
+            print(f"{'='*50}")
+
         frame = self.camera.capture_frame()
 
         # FAST PATH: on-device face ID + basic emotion
         person_id, embedding, local_emotion = self._identify_and_read(frame)
 
+        if verbose and self.face_encoder:
+            if embedding is not None:
+                print(f"  Face detected: yes (embedding captured)")
+                print(f"  On-device emotion: {local_emotion or 'unknown'}")
+                print(f"  Known person: {'yes (ID: ' + str(person_id) + ')' if person_id else 'no (new face)'}")
+            else:
+                print(f"  Face detected: no")
+
         if embedding is None and local_emotion is None:
             # no face detected at all
+            if verbose:
+                print(f"  No face in frame. Waiting {INTERVAL_NO_PERSON}s...")
             self.current_interval = INTERVAL_NO_PERSON
             return self.current_interval
 
@@ -163,6 +183,8 @@ class EmotionMonitor:
 
         # DEEP PATH: call Gemini when needed for CP-aware nuance
         if self._needs_gemini(local_emotion, person_id):
+            if verbose:
+                print(f"  Calling Gemini (CP-aware deep analysis)...")
             frame_b64 = self.camera.frame_to_base64(frame)
             result = self.detector.analyze_frame(frame_b64)
             if result.person_detected:
@@ -170,21 +192,35 @@ class EmotionMonitor:
                 description = result.description
                 confidence = result.confidence
                 context = result.context
-                print(f"[Gemini] {emotion} ({context})")
+                if verbose:
+                    print(f"  Emotion:     {emotion} ({confidence})")
+                    print(f"  Context:     {context}")
+                    print(f"  Description: {description}")
+                else:
+                    print(f"[Gemini] {emotion} ({context})")
             else:
                 print("[Gemini] no person detected in deep analysis")
         else:
-            print(f"[On-device] {emotion} (stable, skipping Gemini)")
+            if verbose:
+                print(f"  Skipping Gemini (mood stable)")
+                print(f"  Emotion:     {emotion} (on-device)")
+            else:
+                print(f"[On-device] {emotion} (stable, skipping Gemini)")
 
         # handle person identity
         if person_id is None:
             person_id = self._register_new_person(
                 description, embedding, emotion, confidence, context
             )
+            if verbose:
+                print(f"  Registered new person (ID: {person_id})")
         else:
             person = self.registry.get_person(person_id)
             last_mood = self.registry.get_last_mood(person_id)
             self.registry.log_mood(person_id, emotion, confidence, context)
+
+            if verbose:
+                print(f"  Logged mood for {person['name']} (ID: {person_id})")
 
             # update face embedding if we got a better one
             if embedding is not None and person.get("face_embedding") is None:
@@ -195,7 +231,14 @@ class EmotionMonitor:
 
         self._adapt_interval(emotion)
         self.mood_ring.set_mood(emotion)
-        print(f"[{emotion}] next scan in {self.current_interval}s")
+
+        if verbose:
+            print(f"  Mood ring:   {emotion}")
+            print(f"  Next scan:   {self.current_interval}s")
+            if self.scan_count == self.verbose_scans:
+                print(f"\n  (Switching to compact output)")
+        else:
+            print(f"[{emotion}] next scan in {self.current_interval}s")
         return self.current_interval
 
     def run(self):

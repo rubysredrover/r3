@@ -34,6 +34,23 @@ Run once (already done):
 node register_widget.js
 ```
 
+## Accounts
+
+| Handle | Email | Role |
+|---|---|---|
+| `@mars_ruby` | mars@redrover.bot | The MARS robot |
+| `@rubys_mom` | mom@redrover.bot | Mom (owner, grants access) |
+| `@pca_jane` | jane@redrover.bot | PCA (demo caregiver) |
+
+All passwords: `Ruby2026!`
+
+## Active Grants
+
+| Grantor | Grantee | Scopes | Note |
+|---|---|---|---|
+| `@rubys_mom` | `@pca_jane` | mood:read, mood:history, location:status | PCA shift access |
+| `@rubys_mom` | `@mars_ruby` | mood:read, mood:history, mood:notify, location:status, location:beacon, person:register, person:list | MARS robot full operational access |
+
 ## Scopes
 
 | Scope | What it controls |
@@ -47,14 +64,12 @@ node register_widget.js
 | `person:list` | View who MARS knows |
 | `settings:manage` | Change scan intervals, thresholds |
 
-## Example grants
+## Example grants (for future)
 
-| Who | Scopes | Why |
-|---|---|---|
-| PCA Jane | `mood:read`, `mood:history`, `location:status` | Needs to check on Ruby during shifts |
-| Grandma | `mood:read` | Wants to know Ruby's mood, nothing else |
-| PT therapist | `mood:history` | Reviews mood patterns for treatment |
-| Mom herself | All scopes | Full access |
+| Who | Handle | Scopes | Why |
+|---|---|---|---|
+| Grandma | TBD | `mood:read` | Wants to know Ruby's mood, nothing else |
+| PT therapist | TBD | `mood:history` | Reviews mood patterns for treatment |
 
 ## Runtime permission check
 

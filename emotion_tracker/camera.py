@@ -19,7 +19,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
 
-MAIN_CAMERA_TOPIC = "/mars/main_camera/left/image_rect_color"
+MAIN_CAMERA_TOPIC = "/mars/main_camera/left/image_raw"
 ARM_CAMERA_TOPIC = "/mars/arm/image_raw"
 
 

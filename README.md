@@ -6,6 +6,8 @@ Ruby's Red Rover gives MARS the ability to see a person, recognize who they are,
 
 This isn't a demo. It's a tool that watches, learns, and adapts — scanning more frequently when it detects distress, backing off when things are stable, and building a longitudinal mood record that caregivers and researchers can use.
 
+Ruby is built around a continuous loop: **sense → understand → score → act**.
+
 ---
 
 ## What It Does
@@ -47,9 +49,20 @@ Mom walks in at 3pm. The lights are soft green. She knows Ruby's having a good a
 | Mood just changed | 10s | Track the shift |
 | Distress detected | 5s | Don't miss anything |
 
+**Acts.** When Ruby's emotional state warrants a response, MARS can:
+
+| Action | When |
+|---|---|
+| No-op | State recorded, no intervention needed |
+| Physical action | Fetch an item, move closer, offer comfort object |
+| Notify caregiver | Alert Mom or PCA via text/app |
+| Web lookup | Search for activity suggestions or calming resources |
+
 ---
 
 ## Architecture
+
+### What's Running Today
 
 ```
                     MARS Robot (Jetson Orin Nano 8GB)
@@ -83,83 +96,68 @@ Mom walks in at 3pm. The lights are soft green. She knows Ruby's having a good a
 
 **Two-tier detection.** inspireface (already on MARS) handles face identity and basic emotion entirely on-device — zero API calls, zero latency. Gemini is only called when the mood changes or distress is detected, for CP-aware nuance that standard models miss. This cuts API usage by ~80% while keeping the deep analysis where it matters.
 
----
+### Full Vision
 
-## Quick Start
+```mermaid
+flowchart TD
+    subgraph ROVER["Ruby's Red Rover — Edge Device (Jetson Orin Nano)"]
+        direction TB
+        subgraph SENSORS["Sensory Inputs"]
+            CAM["Camera (visual)"]
+            MIC["Microphone (audio)"]
+            EXT["External Text (Mom's phone app)"]
+        end
 
-### 1. Get your Gemini API key
+        DAEMON["Triage Daemon / Service (TBD)"]
 
-Go to [Google AI Studio](https://aistudio.google.com), create a key.
+        subgraph LOCAL_PROC["Local Processing"]
+            LOCAL_LLM["Local LLM (text only)"]
+            ANIMA["Anima — Emotional Extraction Engine (VAD via NRC-VAD Lexicon)"]
+            SQLITE["SQLite DB — emotional state, events, history"]
+        end
 
-### 2. Deploy to MARS
+        subgraph EYES["Eyes Display"]
+            EYE_LIVE["Live Mode — rolling emotional state (ambient color)"]
+            EYE_SUMMARY["Summary Mode — stoplight for Mom"]
+        end
 
-```bash
-git clone https://github.com/YOUR_ORG/rubysredrover.git
-cd rubysredrover
-bash deploy.sh
+        subgraph ACTIONS["Actions"]
+            NOOP["No-op (state recorded only)"]
+            PHYSICAL["Physical Action (fetch item / move)"]
+            NOTIFY["Notify Mom / Caregiver"]
+            WEB["Web Lookup (optional)"]
+        end
+    end
+
+    subgraph EDGE_APPLIANCE["Personal Edge AI Appliance (Private Cloud / under 500w)"]
+        MM["Multimodal Understanding — audio + video processing"]
+        VLA["VLA — Vision-Language-Action robot planning"]
+    end
+
+    CAM -->|video stream| DAEMON
+    MIC -->|audio stream| DAEMON
+    EXT -->|text| DAEMON
+
+    DAEMON -->|text| LOCAL_LLM
+    DAEMON -->|audio / video| MM
+
+    MM -->|scene description / transcription| ANIMA
+    LOCAL_LLM -->|text output| ANIMA
+
+    ANIMA -->|VAD score + event| SQLITE
+    ANIMA -->|emotional state| EYE_LIVE
+    ANIMA -->|triggers action?| ACTIONS
+
+    SQLITE -->|rolling avg / history| EYE_SUMMARY
+    SQLITE -->|context| VLA
+
+    PHYSICAL -->|action request| VLA
+    VLA -->|motor commands| ROVER
+
+    EXT -->|Mom: How was your day| EYE_SUMMARY
 ```
 
-### 3. Run it
-
-```bash
-ssh jetson1@mars-the-38th.local
-cd ~/emotion_tracker
-export GEMINI_API_KEY="your-key"
-python3 run.py
-```
-
-MARS will start scanning. When it sees someone new, it'll ask for their name. After that, it remembers.
-
----
-
-## For Engineers: Consuming Emotion Data
-
-The person registry is a SQLite database at `~/emotion_tracker/people.db`. Your agent actions can query it directly:
-
-```python
-from emotion_tracker.person_registry import PersonRegistry
-from emotion_tracker.mood_summary import summarize_day
-
-with PersonRegistry() as reg:
-    # who's the primary person we're tracking?
-    primary = reg.get_primary_person()
-    
-    # what's their mood right now?
-    mood = reg.get_last_mood(primary["id"])
-    print(f"{primary['name']} is feeling {mood['emotion']}")
-    
-    # "how was Ruby's day?"
-    summary = summarize_day(reg, primary["id"])
-    print(summary["summary"])
-    # → "Ruby was mostly content today (68% of readings). There were 3 readings
-    #    showing concern (frustrated, tired), starting around 2:15pm..."
-    
-    # raw mood history
-    history = reg.get_mood_history(primary["id"], limit=20)
-    for entry in history:
-        print(f"  {entry['timestamp']}: {entry['emotion']} ({entry['context']})")
-```
-
-### Database schema
-
-**people**
-| Column | Type | Notes |
-|---|---|---|
-| id | INTEGER | Primary key |
-| name | TEXT | Their name |
-| description | TEXT | Physical description from Gemini |
-| face_embedding | BLOB | 128-dim face vector (local recognition) |
-| is_primary | INTEGER | 1 = actively tracked person |
-| created_at | TEXT | ISO timestamp |
-
-**mood_log**
-| Column | Type | Notes |
-|---|---|---|
-| person_id | INTEGER | FK to people |
-| emotion | TEXT | happy, sad, tired, in_pain, frustrated, etc. |
-| confidence | TEXT | high / medium / low |
-| context | TEXT | "grimacing but eyes engaged" — the why behind the label |
-| timestamp | TEXT | ISO timestamp |
+The full vision adds audio/microphone input, a local LLM for text processing, the Anima emotional extraction engine (VAD scoring), an Edge AI Appliance for multimodal understanding, and VLA for physical robot actions. Today's implementation covers the vision path end-to-end; the diagram above shows where everything else plugs in.
 
 ---
 
@@ -190,21 +188,21 @@ Red Rover is the companion web app that lets Mom (or any authorized caregiver) c
 - Day summary — natural language narrative ("Ruby was mostly content today...")
 - Access management — powered by Bolo grants (coming soon in UI)
 
-Red Rover talks to the MARS API running on the Jetson (port 8080).
+**Live:** [https://red-rover-650440848480.us-central1.run.app](https://red-rover-650440848480.us-central1.run.app)
 
-Lives in the sibling repo: `rubysredrover-app/`
+Login: `mom@redrover.bot` / `Ruby2026!`
+
+Red Rover talks to MARS through the Bolo relay. Deployed on GCP Cloud Run (same project as the Bolo API).
+
+Source: sibling repo `rubysredrover-app/`
 
 ---
 
 ## Bolo Integration — Who Can Check On Ruby
 
-[Bolospot](https://bolospot.com) is the trust layer. Mom controls who can access Ruby's data.
+[Bolospot](https://bolospot.com) is the trust layer. Mom controls who can access Ruby's data — PCA Jane gets `mood:read` + `location:status`, Grandma gets `mood:read` only. At runtime, every skill checks Bolo before returning data. Non-transitive: if Mom grants Jane access, Jane can't pass it along.
 
-MARS is registered as a Bolo widget (slug: `mars`). Mom creates grants to give people specific access — PCA Jane gets `mood:read` + `location:status`, Grandma gets `mood:read` only. At runtime, every skill checks Bolo before returning data. Non-transitive: if Mom grants Jane access, Jane can't pass it along.
-
-**Scopes:** `mood:read`, `mood:history`, `mood:notify`, `location:status`, `location:beacon`, `person:register`, `person:list`, `settings:manage`
-
-See [BOLO.md](BOLO.md) for full integration docs — grant examples, runtime checks, environment variables.
+See [BOLO.md](BOLO.md) for scopes, grant examples, runtime checks, and environment variables.
 
 ---
 
@@ -216,7 +214,9 @@ rubysredrover/                          # MARS robot code
 ├── deploy.sh                           # one-command deploy to MARS
 ├── register_widget.js                  # register MARS as Bolo widget
 ├── requirements.txt
-├── MARS_SETUP.md                       # what's on the robot (keep updated!)
+├── MARS_SETUP.md                       # what's on the robot, deploy steps, built with
+├── ENGINEER.md                         # database schema, Python API for consuming emotion data
+├── BOLO.md                             # Bolo trust & permissions — scopes, grants, runtime checks
 ├── skills/                             # → ~/skills/ on robot (BASIC auto-discovers)
 │   ├── check_mood.py                   # "How is Ruby feeling?"
 │   ├── day_summary.py                  # "How was Ruby's day?"
@@ -242,7 +242,15 @@ rubysredrover-app/                      # Red Rover — Mom's web app
 
 ---
 
-## Future: On-Device Inference
+## Getting Started
+
+See [MARS_SETUP.md](MARS_SETUP.md) for deploy steps, hardware specs, and what's on the robot. See [ENGINEER.md](ENGINEER.md) for the Python API and database schema.
+
+---
+
+## Future
+
+### On-Device Inference
 
 The architecture is ready. When you want to stop calling the cloud:
 
@@ -253,20 +261,13 @@ The architecture is ready. When you want to stop calling the cloud:
 
 Zero bandwidth. Zero latency. Zero API cost. Same interface.
 
-## Future: Anima Engine (Text-Based Emotion)
+### Anima Engine (Text-Based Emotion)
 
 [Anima](https://github.com/brainwavecollective/anima-engine) is a two-loop emotion extraction engine for text input. It could complement vision-based detection by analyzing Ruby's *words* alongside her facial cues — especially valuable when CP makes facial expressions unreliable. Face + voice + text = three signals triangulating on the truth.
 
----
+### Audio Input
 
-## Built With
-
-- [Innate MARS](https://www.innate.bot/) — the robot (innate-os 0.5.0-rc10)
-- [Google Gemini 2.0 Flash](https://aistudio.google.com) — CP-aware emotion analysis (cloud, called only on mood changes)
-- [InspireFace](https://github.com/HyperInspire/InspireFace) — on-device face recognition + basic emotion (pre-installed on MARS)
-- [OpenCV](https://opencv.org/) — camera capture (pre-installed on MARS)
-- SQLite — because it's on a robot and it just works
-- **Zero new packages installed on the robot** — everything was already there
+The full architecture includes microphone as a sensory input — voice tone, cadence, and verbal content as another signal channel. Combined with vision and text, three modalities triangulate on emotional state more reliably than any one alone.
 
 ---
 

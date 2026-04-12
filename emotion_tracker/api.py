@@ -199,9 +199,19 @@ class RedRoverHandler(BaseHTTPRequestHandler):
 
 
 def start_api(port=8080):
-    """Start the Red Rover API server in a background thread."""
-    server = HTTPServer(("0.0.0.0", port), RedRoverHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    print(f"[Red Rover API] Running on http://0.0.0.0:{port}")
-    return server
+    """Start the Red Rover API server in a background thread.
+
+    Tries the requested port, then falls back to higher ports if taken.
+    Non-fatal — emotion tracker runs even if the API can't bind.
+    """
+    for try_port in [port, port + 1, port + 2, port + 10, port + 100]:
+        try:
+            server = HTTPServer(("0.0.0.0", try_port), RedRoverHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            print(f"[Red Rover API] Running on http://0.0.0.0:{try_port}")
+            return server
+        except OSError:
+            print(f"[Red Rover API] Port {try_port} in use, trying next...")
+    print("[Red Rover API] WARNING: Could not bind to any port. API disabled, monitor will still run.")
+    return None
