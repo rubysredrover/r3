@@ -27,13 +27,14 @@
             --mono: 'JetBrains Mono', monospace;
         }
 
-        body { font-family: var(--sans); background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+        body { font-family: var(--sans); background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
         /* ── HEADER ── */
         .header {
             display: flex; align-items: center; justify-content: space-between;
             padding: 0.8rem 1.5rem;
             background: var(--panel); border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 100; flex-shrink: 0;
         }
         .header-left { display: flex; align-items: center; gap: 1rem; }
         .header-left h1 { font-size: 0.9rem; font-weight: 700; }
@@ -59,13 +60,13 @@
         /* ── MAIN LAYOUT ── */
         .main {
             display: grid; grid-template-columns: 340px 1fr 340px;
-            height: calc(100vh - 52px);
+            flex: 1; min-height: 0; overflow: hidden;
         }
 
         /* ── LEFT: PIPELINE ── */
         .pipeline {
             background: var(--panel); border-right: 1px solid var(--border);
-            padding: 1.2rem; overflow-y: auto;
+            padding: 1.2rem; overflow-y: auto; min-height: 0;
         }
         .pipeline-header {
             font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
@@ -105,13 +106,15 @@
         /* ── CENTER: VIDEO + RESULTS ── */
         .center {
             display: flex; flex-direction: column;
-            padding: 1.2rem; gap: 1rem; overflow-y: auto;
+            padding: 1.2rem; gap: 1rem; overflow-y: auto; min-height: 0;
+            max-height: calc(100vh - 52px);
         }
 
         .video-frame {
             width: 100%; aspect-ratio: 16/9; background: #000;
             border-radius: 12px; overflow: hidden; position: relative;
             border: 1px solid var(--border);
+            flex-shrink: 0; max-height: 40vh;
         }
         .video-frame video, .video-frame img {
             width: 100%; height: 100%; object-fit: cover;
@@ -160,7 +163,7 @@
         /* ── RIGHT: MOM'S APP ── */
         .app-panel {
             background: var(--panel); border-left: 1px solid var(--border);
-            display: flex; flex-direction: column;
+            display: flex; flex-direction: column; min-height: 0;
         }
         .app-header {
             padding: 1rem 1.2rem; border-bottom: 1px solid var(--border);
@@ -170,7 +173,7 @@
 
         /* Mini app mockup */
         .mini-app {
-            flex: 1; padding: 1rem; overflow-y: auto;
+            flex: 1; padding: 1rem; overflow-y: auto; min-height: 0;
             display: flex; flex-direction: column; gap: 0.8rem;
         }
 
@@ -243,6 +246,7 @@
         <input type="text" id="apiKeyInput" placeholder="Gemini API Key" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.8rem;font-size:0.8rem;width:200px;font-family:var(--mono);">
         <button id="btnValidate" onclick="validateKey()" style="font-size:0.75rem;">Validate</button>
         <button id="btnStart" onclick="document.getElementById('filePicker').click()">&#9654; Choose Video</button>
+        <button id="btnCompare" onclick="toggleCompare()" style="font-size:0.75rem; opacity:0.6;" title="Run the same video through a generic (non-CP-aware) prompt to show the difference">NT Compare</button>
     </div>
 </div>
 
@@ -329,7 +333,7 @@
     <!-- CENTER: VIDEO + RESULTS -->
     <div class="center">
         <div class="video-frame" id="videoFrame">
-            <video id="videoEl" style="width:100%;height:100%;object-fit:cover;display:none;" muted></video>
+            <video id="videoEl" style="width:100%;height:100%;object-fit:cover;display:none;" muted playsinline></video>
             <img id="videoImg" style="width:100%;height:100%;object-fit:cover;display:none;" alt="Current frame">
             <canvas id="videoCanvas" style="display:none;"></canvas>
             <div id="videoPlaceholder" style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--dim); flex-direction:column; gap:1rem; cursor:pointer;" onclick="document.getElementById('filePicker').click()">
@@ -341,6 +345,10 @@
             <div class="video-overlay" id="videoOverlay" style="display:none;">
                 <div class="overlay-emotion" id="overlayEmotion"></div>
                 <div class="overlay-score" id="overlayScore"></div>
+            </div>
+            <div id="videoDoneOverlay" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; flex-direction:column; gap:1rem; z-index:10;">
+                <span style="font-size:1.2rem; font-weight:700; color:var(--green);">Analysis Complete</span>
+                <button onclick="resetForNext()" style="background:var(--accent); color:#fff; border:none; border-radius:8px; padding:0.6rem 1.4rem; font-size:0.9rem; font-weight:600; cursor:pointer;">Choose Next Video</button>
             </div>
         </div>
 
@@ -361,6 +369,32 @@
                     MARS uses custom Gemini prompts to distinguish involuntary motor movements from emotional expressions.
                 </div>
             </div>
+        </div>
+
+        <!-- Side-by-side comparison (hidden until NT Compare enabled) -->
+        <div id="comparePanel" style="display:none;">
+            <div style="font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.12em; color:var(--dim); margin-bottom:0.6rem;">Side-by-Side: CP-Aware vs Neurotypical Baseline</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.8rem;">
+                <div class="result-card" style="border-color:var(--green);">
+                    <div class="result-label" style="color:var(--green);">CP-Aware (MARS)</div>
+                    <div class="result-value" id="cpSideEmotion" style="color:var(--green);">&mdash;</div>
+                    <div class="result-detail" id="cpSideContext">Understands spasticity, stimming, motor artifacts</div>
+                    <div style="margin-top:0.5rem;">
+                        <span class="result-label">Score</span>
+                        <span class="result-value" id="cpSideScore" style="font-size:1.1rem; color:var(--green);">&mdash;</span>
+                    </div>
+                </div>
+                <div class="result-card" style="border-color:var(--orange);">
+                    <div class="result-label" style="color:var(--orange);">Neurotypical Baseline</div>
+                    <div class="result-value" id="ntSideEmotion" style="color:var(--orange);">&mdash;</div>
+                    <div class="result-detail" id="ntSideContext">Generic emotion detection &mdash; no disability awareness</div>
+                    <div style="margin-top:0.5rem;">
+                        <span class="result-label">Score</span>
+                        <span class="result-value" id="ntSideScore" style="font-size:1.1rem; color:var(--orange);">&mdash;</span>
+                    </div>
+                </div>
+            </div>
+            <div id="compareDelta" style="margin-top:0.6rem; padding:0.8rem; background:var(--card); border-radius:8px; border:1px solid var(--border); font-size:0.85rem; color:var(--accent-light); display:none;"></div>
         </div>
     </div>
 
@@ -418,7 +452,43 @@
 // ── REAL PIPELINE — processes actual video through Gemini API ──
 // No fake data. Pick a video, every frame goes through real Gemini CP-aware analysis.
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+let currentModelIdx = 0;
+const GEMINI_MODEL = GEMINI_MODELS[0];
+
+async function callGemini(apiKey, parts) {
+    for (let i = currentModelIdx; i < GEMINI_MODELS.length; i++) {
+        const model = GEMINI_MODELS[i];
+        try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts }],
+                    generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+                })
+            });
+            if (resp.status === 503 || resp.status === 429) {
+                addFeedItem('⚠️', `${model} unavailable (${resp.status}), trying next...`);
+                continue;
+            }
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.error?.message || `HTTP ${resp.status}`);
+            }
+            if (i !== currentModelIdx) {
+                currentModelIdx = i;
+                addFeedItem('🔄', `Switched to ${model}`);
+            }
+            const json = await resp.json();
+            const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error('No response from Gemini');
+            return { result: JSON.parse(text), model };
+        } catch (e) {
+            if (i === GEMINI_MODELS.length - 1) throw e;
+        }
+    }
+}
 const ANALYZE_PROMPT = `You are an emotion recognition system for a home robot that supports people with disabilities including cerebral palsy.
 
 Analyze the primary person in this video/image clip. Use BOTH visual and audio cues. Return ONLY valid JSON:
@@ -510,6 +580,9 @@ function addFeedItem(icon, text) {
     item.innerHTML = `<span class="feed-icon">${icon}</span><span class="feed-text">${text}</span><span class="feed-time">${timeStr()}</span>`;
     list.insertBefore(item, list.firstChild);
     if (list.children.length > 20) list.removeChild(list.lastChild);
+    // Auto-scroll the right panel to show latest feed
+    const miniApp = list.closest('.mini-app');
+    if (miniApp) miniApp.scrollTop = miniApp.scrollHeight;
 }
 
 function updateApp(d) {
@@ -525,6 +598,10 @@ function updateApp(d) {
     document.getElementById('valEye').textContent = Math.round(d.eye * 100) + '%';
     document.getElementById('valVol').textContent = Math.round(d.vol * 100) + '%';
     document.getElementById('valSpd').textContent = d.speed.toFixed(1) + 's';
+
+    // Auto-scroll center panel to bottom so comparison/results stay visible
+    const center = document.querySelector('.center');
+    if (center) center.scrollTop = center.scrollHeight;
 }
 
 // ── Validate API key ──
@@ -637,6 +714,23 @@ async function processVideo(apiKey, file) {
     const fileB64 = await fileToBase64(file);
     const mimeType = file.type || 'video/mp4';
 
+    // Upload video to Gemini File API once (both CP and NT calls reuse the URI)
+    let geminiFileUri = null;
+    if (compareMode) {
+        document.getElementById('ntSideContext').textContent = 'Uploading video to Gemini...';
+        document.getElementById('ntSideContext').classList.add('pulsing');
+        try {
+            geminiFileUri = await uploadToGeminiFiles(apiKey, file);
+            document.getElementById('ntSideContext').classList.remove('pulsing');
+            document.getElementById('ntSideContext').textContent = 'Video uploaded — ready for comparison';
+            addFeedItem('☁️', 'Video uploaded to Gemini Files API (shared by both prompts)');
+        } catch (e) {
+            document.getElementById('ntSideContext').classList.remove('pulsing');
+            document.getElementById('ntSideContext').textContent = `File upload failed: ${e.message} — falling back to inline`;
+            geminiFileUri = null;
+        }
+    }
+
     for (let i = 0; i < totalSegments && processing; i++) {
         const startTime = i * SEGMENT_SEC;
         const endTime = Math.min((i + 1) * SEGMENT_SEC, duration);
@@ -646,16 +740,27 @@ async function processVideo(apiKey, file) {
         await new Promise(r => { video.onseeked = r; });
         video.play();
 
+        // Stop playback at segment end
+        const segEnd = endTime;
+        const stopAtEnd = () => {
+            if (video.currentTime >= segEnd) {
+                video.pause();
+                video.removeEventListener('timeupdate', stopAtEnd);
+            }
+        };
+        video.addEventListener('timeupdate', stopAtEnd);
+
         // Grab a thumbnail for the UI
         ctx.drawImage(video, 0, 0);
         const thumbB64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
         // For segments, we send the whole video with a time reference in the prompt
         // Gemini 2.5 Flash processes video natively including audio
-        await runGeminiVideoAnalysis(apiKey, fileB64, mimeType, thumbB64, startTime, endTime, i + 1, totalSegments);
+        await runGeminiVideoAnalysis(apiKey, fileB64, mimeType, thumbB64, startTime, endTime, i + 1, totalSegments, geminiFileUri);
 
-        // Pause playback while processing next
+        // Ensure paused before next segment
         video.pause();
+        video.removeEventListener('timeupdate', stopAtEnd);
 
         if (i < totalSegments - 1 && processing) {
             document.getElementById('statusText').textContent = `Next segment in 2s...`;
@@ -664,7 +769,11 @@ async function processVideo(apiKey, file) {
     }
 
     video.pause();
+    video.currentTime = video.duration; // freeze on last frame
     URL.revokeObjectURL(url);
+
+    // Show "done" overlay with next video button
+    document.getElementById('videoDoneOverlay').style.display = 'flex';
 }
 
 async function runGeminiVideoAnalysis(apiKey, videoB64, mimeType, thumbB64, startSec, endSec, segNum, totalSegs) {
@@ -699,27 +808,14 @@ async function runGeminiVideoAnalysis(apiKey, videoB64, mimeType, thumbB64, star
 
     const segmentPrompt = ANALYZE_PROMPT + `\n\nAnalyze the segment from ${startSec.toFixed(0)}s to ${endSec.toFixed(0)}s of this video. Pay attention to both visual cues AND audio (voice tone, volume, breathing, vocalizations). For people with CP, stimming and muscle tension often mean happiness.`;
 
-    let result;
+    let result, usedModel;
     try {
-        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [
-                        { text: segmentPrompt },
-                        { inline_data: { mime_type: mimeType, data: videoB64 } }
-                    ]
-                }],
-                generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
-            })
-        });
-
-        const json = await resp.json();
-        if (!resp.ok) throw new Error(json.error?.message || `HTTP ${resp.status}`);
-        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) throw new Error('No response from Gemini');
-        result = JSON.parse(text);
+        const geminiResult = await callGemini(apiKey, [
+            { text: segmentPrompt },
+            { inline_data: { mime_type: mimeType, data: videoB64 } }
+        ]);
+        result = geminiResult.result;
+        usedModel = geminiResult.model;
     } catch (e) {
         setStep('gemini', 'done', `Error: ${e.message}`);
         document.getElementById('resCPContext').classList.remove('pulsing');
@@ -1064,6 +1160,204 @@ function computeScore(emotion) {
     const score = Math.max(0, Math.min(100, Math.round(raw * 100)));
     const level = score >= 80 ? 'great' : score >= 60 ? 'okay' : score >= 40 ? 'quiet' : score >= 20 ? 'withdrawn' : 'alert';
     return { score, level, eye: Math.round(eye*1000)/1000, vol: Math.round(vol*1000)/1000, speed: Math.round(speed*100)/100 };
+}
+
+// ── Reset for next video (keep cumulative data) ──
+function resetForNext() {
+    // Hide done overlay
+    document.getElementById('videoDoneOverlay').style.display = 'none';
+    document.getElementById('videoOverlay').style.display = 'none';
+
+    // Hide video, show file picker
+    const video = document.getElementById('videoEl');
+    video.pause();
+    video.removeAttribute('src');
+    video.style.display = 'none';
+    document.getElementById('videoImg').style.display = 'none';
+    document.getElementById('videoPlaceholder').style.display = 'flex';
+
+    // Reset pipeline steps (but NOT the score graph, feed, or app — those are cumulative)
+    ['capture','face','identify','gemini','score','mood','bolo','app'].forEach(s => setStep(s, '', ''));
+    document.getElementById('resEmotion').textContent = '\u2014';
+    document.getElementById('resEmotion').style.color = 'var(--dim)';
+    document.getElementById('resConfidence').textContent = '\u2014';
+    document.getElementById('resContext').textContent = 'Waiting for analysis...';
+    document.getElementById('resCPContext').textContent = 'Choose another video to continue tracking.';
+
+    document.getElementById('statusText').textContent = 'Ready for next video';
+    processing = false;
+
+    // Scroll video frame into view
+    document.getElementById('videoFrame').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Gemini File Upload (upload once, reference by URI) ──
+async function uploadToGeminiFiles(apiKey, file) {
+    // Step 1: Start resumable upload
+    const startResp = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+            'X-Goog-Upload-Protocol': 'resumable',
+            'X-Goog-Upload-Command': 'start',
+            'X-Goog-Upload-Header-Content-Length': file.size,
+            'X-Goog-Upload-Header-Content-Type': file.type || 'video/mp4',
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ file: { display_name: file.name } }),
+    });
+    if (!startResp.ok) throw new Error(`Upload init failed: ${startResp.status}`);
+    const uploadUrl = startResp.headers.get('X-Goog-Upload-URL');
+    if (!uploadUrl) throw new Error('No upload URL returned');
+
+    // Step 2: Upload the bytes
+    const bytes = await file.arrayBuffer();
+    const uploadResp = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+            'Content-Length': file.size,
+            'X-Goog-Upload-Offset': '0',
+            'X-Goog-Upload-Command': 'upload, finalize',
+        },
+        body: bytes,
+    });
+    if (!uploadResp.ok) throw new Error(`Upload failed: ${uploadResp.status}`);
+    const uploadResult = await uploadResp.json();
+    const fileUri = uploadResult.file?.uri;
+    if (!fileUri) throw new Error('No file URI in response');
+
+    // Step 3: Poll until processing is complete
+    const fileName = uploadResult.file.name;
+    for (let attempt = 0; attempt < 30; attempt++) {
+        const statusResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`);
+        const statusJson = await statusResp.json();
+        if (statusJson.state === 'ACTIVE') return fileUri;
+        if (statusJson.state === 'FAILED') throw new Error('File processing failed');
+        await new Promise(r => setTimeout(r, 2000));
+    }
+    throw new Error('File processing timed out');
+}
+
+// ── Neurotypical comparison mode ──
+let compareMode = false;
+
+const NT_PROMPT = `You are a standard emotion recognition system. Analyze the primary person in this video/image.
+Return ONLY valid JSON:
+{
+    "person_detected": true/false,
+    "emotion": "primary emotion",
+    "confidence": "high/medium/low",
+    "context": "what visual cues indicate this emotion",
+    "eye_contact_estimate": 0.0 to 1.0,
+    "volume_level": "silent/quiet/moderate/loud",
+    "response_speed": "fast/moderate/slow/none"
+}
+Valid emotions: happy, sad, angry, surprised, fearful, disgusted, neutral, tired, stressed, excited, confused, content, frustrated, in_pain, uncomfortable, relaxed
+
+Analyze facial expressions, body language, and voice tone at face value. Do not make assumptions about disabilities or motor conditions.`;
+
+function toggleCompare() {
+    compareMode = !compareMode;
+    const btn = document.getElementById('btnCompare');
+    btn.classList.toggle('active', compareMode);
+    btn.style.opacity = compareMode ? '1' : '0.6';
+    document.getElementById('comparePanel').style.display = compareMode ? 'block' : 'none';
+}
+
+// Hook into the analysis — fire NT comparison in parallel (non-blocking)
+const _origRunGeminiVideo = runGeminiVideoAnalysis;
+runGeminiVideoAnalysis = async function(...args) {
+    // Start NT call immediately (don't await — runs in background)
+    if (compareMode) {
+        runNTComparison(...args).catch(() => {});
+    }
+    // Run CP-aware analysis (this is what the pipeline waits on)
+    await _origRunGeminiVideo(...args);
+
+    // Mirror CP results into the side-by-side panel
+    if (compareMode) {
+        const cpEmotion = document.getElementById('resEmotion').textContent;
+        const cpContext = document.getElementById('resCPContext').textContent;
+        const cpScoreText = document.getElementById('overlayScore').textContent;
+        document.getElementById('cpSideEmotion').textContent = cpEmotion;
+        document.getElementById('cpSideContext').textContent = cpContext;
+        document.getElementById('cpSideScore').textContent = cpScoreText;
+        document.getElementById('cpSideScore').style.color = scoreColor(parseInt(cpScoreText) || 50);
+    }
+};
+
+async function runNTComparison(apiKey, videoB64, mimeType, thumbB64, startSec, endSec, _segNum, _totalSegs, geminiFileUri) {
+    const segmentPrompt = NT_PROMPT + `\n\nAnalyze the segment from ${startSec.toFixed(0)}s to ${endSec.toFixed(0)}s of this video. Pay attention to both visual cues AND audio (voice tone, volume, breathing, vocalizations).`;
+
+    // Show loading state
+    document.getElementById('ntSideEmotion').textContent = '...';
+    document.getElementById('ntSideEmotion').style.color = 'var(--dim)';
+    document.getElementById('ntSideContext').textContent = 'Analyzing video with generic prompt...';
+    document.getElementById('ntSideContext').classList.add('pulsing');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    // Build the video part — use file URI if available (already uploaded), else inline base64
+    const videoPart = geminiFileUri
+        ? { file_data: { mime_type: mimeType, file_uri: geminiFileUri } }
+        : { inline_data: { mime_type: mimeType, data: videoB64 } };
+
+    try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+                contents: [{ parts: [
+                    { text: segmentPrompt },
+                    videoPart
+                ]}],
+                generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+            })
+        });
+        clearTimeout(timeout);
+
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error?.message || `HTTP ${resp.status}`);
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('Empty response');
+        const nt = JSON.parse(text);
+
+        document.getElementById('ntSideContext').classList.remove('pulsing');
+
+        if (!nt.person_detected) {
+            document.getElementById('ntSideEmotion').textContent = 'No person';
+            document.getElementById('ntSideContext').textContent = 'Generic model detected no person in this segment.';
+            return;
+        }
+
+        // Populate NT side
+        document.getElementById('ntSideEmotion').textContent = nt.emotion;
+        document.getElementById('ntSideEmotion').style.color = 'var(--orange)';
+        document.getElementById('ntSideContext').textContent = nt.context;
+
+        const ntS = computeScore(nt.emotion);
+        document.getElementById('ntSideScore').textContent = ntS.score;
+        document.getElementById('ntSideScore').style.color = scoreColor(ntS.score);
+
+        // Show delta (CP side may still be loading — use whatever's current)
+        const cpEmotion = document.getElementById('resEmotion').textContent;
+        const deltaEl = document.getElementById('compareDelta');
+        if (cpEmotion && cpEmotion !== '\u2014' && cpEmotion !== nt.emotion) {
+            deltaEl.style.display = 'block';
+            deltaEl.innerHTML = `<strong>MISMATCH:</strong> Generic model reads <strong style="color:var(--orange)">${nt.emotion}</strong> where CP-aware reads <strong style="color:var(--green)">${cpEmotion}</strong>. The generic model doesn't know that stimming and muscle tension can mean happiness for Ruby.`;
+            addFeedItem('\u26A0\uFE0F', `NT mismatch: ${nt.emotion} vs CP-aware ${cpEmotion}`);
+        } else if (cpEmotion && cpEmotion !== '\u2014') {
+            deltaEl.style.display = 'block';
+            deltaEl.innerHTML = `Both agree: <strong>${cpEmotion}</strong> &mdash; this expression reads the same with or without CP awareness.`;
+        }
+    } catch (e) {
+        clearTimeout(timeout);
+        document.getElementById('ntSideContext').classList.remove('pulsing');
+        const msg = e.name === 'AbortError' ? 'Timed out (60s)' : e.message;
+        document.getElementById('ntSideEmotion').textContent = 'Error';
+        document.getElementById('ntSideContext').textContent = `NT comparison failed: ${msg}`;
+    }
 }
 </script>
 </body>
