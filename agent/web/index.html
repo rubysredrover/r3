@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ruby's Red Rover · v2 Demo</title>
+<style>
+  :root {
+    --bg:#0a0a0a; --card:#161616; --card-2:#1d1d1d; --border:#222;
+    --text:#e8e8ea; --muted:#8a8a92; --dim:#5a5a62;
+    --accent:#7c5cfc; --accent-2:#9d83ff; --green:#34d399;
+    --yellow:#fbbf24; --blue:#60a5fa; --red:#f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--text); }
+  body { font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; font-size:15px; line-height:1.5; min-height:100vh; -webkit-font-smoothing:antialiased; }
+  .app { display:grid; grid-template-columns:40fr 60fr; gap:20px; padding:24px; max-width:1600px; margin:0 auto; min-height:100vh; }
+  @media (max-width:900px) { .app { grid-template-columns:1fr; } }
+  .col { display:flex; flex-direction:column; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px; transition:border-color 220ms ease, background 220ms ease; }
+  .card h3 { margin:0 0 14px 0; font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+
+  .brand { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  .logo { width:36px; height:36px; border-radius:10px; background:radial-gradient(circle at 30% 30%, #ff5a5a 0%, #b81d1d 70%); box-shadow:0 0 20px rgba(255,90,90,.35); flex-shrink:0; }
+  .wordmark { font-weight:700; font-size:16px; letter-spacing:-.01em; }
+  .badge { display:inline-block; padding:4px 10px; border-radius:999px; font-size:11px; font-weight:600; background:linear-gradient(90deg, rgba(124,92,252,.15), rgba(52,211,153,.15)); border:1px solid rgba(124,92,252,.4); color:var(--accent-2); letter-spacing:.04em; }
+
+  h1 { font-size:30px; margin:8px 0 6px 0; letter-spacing:-.02em; font-weight:700; }
+  h1 .sep { color:var(--dim); font-weight:400; margin:0 6px; }
+  .subtitle { color:var(--muted); font-size:14px; margin:0 0 4px 0; }
+
+  .input-row { display:flex; flex-direction:column; gap:12px; margin-top:4px; }
+  textarea, input[type="text"] { width:100%; background:var(--card-2); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:16px 18px; font-size:16px; font-family:inherit; resize:none; transition:border-color 200ms ease, box-shadow 200ms ease; }
+  textarea:focus, input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(124,92,252,.15); }
+  button.primary { background:linear-gradient(180deg, var(--accent) 0%, #6849e6 100%); color:white; border:none; border-radius:10px; padding:14px 18px; font-size:16px; font-weight:600; cursor:pointer; box-shadow:0 4px 16px rgba(124,92,252,.35); transition:transform 180ms ease, box-shadow 180ms ease, opacity 200ms ease; }
+  button.primary:hover { transform:translateY(-1px); box-shadow:0 6px 22px rgba(124,92,252,.5); }
+  button.primary:active { transform:translateY(0); }
+  button.primary:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; }
+
+  details.about { background:var(--card-2); border:1px solid var(--border); border-radius:10px; padding:14px 18px; transition:border-color 200ms ease; }
+  details.about summary { cursor:pointer; font-weight:600; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; list-style:none; user-select:none; }
+  details.about summary::-webkit-details-marker { display:none; }
+  details.about summary::after { content:" +"; color:var(--dim); }
+  details.about[open] summary::after { content:" −"; }
+  details.about p { margin:12px 0 0 0; font-size:14px; color:var(--text); line-height:1.6; }
+  details.about .note { color:var(--muted); font-size:12px; margin-top:10px; font-style:italic; }
+
+  .right-header { display:flex; align-items:center; justify-content:space-between; }
+  .right-header h2 { font-size:22px; margin:0; letter-spacing:-.01em; }
+  .mood-ring { width:18px; height:18px; border-radius:50%; background:#444; box-shadow:0 0 0 4px rgba(255,255,255,.03); transition:background 280ms ease, box-shadow 280ms ease; position:relative; }
+  .mood-ring::after { content:''; position:absolute; inset:-6px; border-radius:50%; background:inherit; opacity:.35; filter:blur(8px); z-index:-1; }
+  .mood-ring.idle    { background:#5a5a62; }
+  .mood-ring.thinking{ background:var(--yellow); animation:pulseGlow 1.4s ease-in-out infinite; }
+  .mood-ring.calling { background:var(--blue);   animation:pulseGlow 1.0s ease-in-out infinite; }
+  .mood-ring.done    { background:var(--green); }
+  @keyframes pulseGlow {
+    0%,100% { box-shadow:0 0 0 0 rgba(255,255,255,0), 0 0 12px 2px currentColor; }
+    50%     { box-shadow:0 0 0 6px rgba(255,255,255,.05), 0 0 20px 4px currentColor; }
+  }
+
+  .voice-text { font-size:18px; font-weight:500; min-height:24px; }
+  .voice-text.empty { color:var(--dim); font-style:italic; font-weight:400; }
+  .conf-row { display:flex; align-items:center; gap:12px; margin-top:14px; }
+  .conf-label { font-size:12px; color:var(--muted); min-width:80px; text-transform:uppercase; letter-spacing:.06em; }
+  .conf-bar { flex:1; height:8px; background:#222; border-radius:4px; overflow:hidden; }
+  .conf-fill { height:100%; width:0%; background:linear-gradient(90deg, var(--accent), var(--green)); transition:width 400ms cubic-bezier(.4,0,.2,1); }
+  .conf-pct { font-size:13px; color:var(--text); min-width:44px; text-align:right; font-variant-numeric:tabular-nums; }
+  .clarify { margin-top:14px; padding:10px 14px; background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25); border-radius:8px; color:var(--yellow); font-size:13px; display:none; }
+  .clarify.active { display:block; }
+
+  .grants { display:flex; flex-wrap:wrap; gap:12px; }
+  .grant { flex:1 1 0; min-width:140px; background:var(--card-2); border:1px solid var(--border); border-radius:10px; padding:14px; transition:all 260ms ease; }
+  .grant .icon { font-size:18px; margin-bottom:6px; display:block; transition:transform 240ms ease; }
+  .grant .scope { font-size:11px; color:var(--muted); font-family:ui-monospace,'SF Mono',Menlo,monospace; word-break:break-word; }
+  .grant .value { font-size:12px; color:var(--text); font-family:ui-monospace,monospace; word-break:break-word; max-height:0; opacity:0; margin-top:0; overflow:hidden; transition:max-height 300ms ease, opacity 260ms ease, margin-top 260ms ease; }
+  .grant.checking { border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.04); }
+  .grant.checking .icon { animation:spin 1.1s linear infinite; }
+  .grant.granted { border-color:rgba(52,211,153,.45); background:rgba(52,211,153,.05); }
+  .grant.granted .value { max-height:80px; opacity:1; margin-top:8px; }
+  @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+
+  .log { background:#0d0d0d; border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:12px; color:var(--muted); height:180px; overflow-y:auto; line-height:1.6; }
+  .log .line { white-space:pre-wrap; word-break:break-word; }
+  .log .ts { color:var(--dim); margin-right:8px; }
+  .log .ev { color:var(--accent-2); }
+  .log::-webkit-scrollbar { width:6px; }
+  .log::-webkit-scrollbar-thumb { background:#2a2a2a; border-radius:3px; }
+
+  .phone { text-align:center; padding:32px 24px; transition:all 300ms ease; }
+  .phone.idle { opacity:.55; }
+  .phone.calling { background:radial-gradient(circle at center, rgba(96,165,250,.15) 0%, transparent 70%); border-color:rgba(96,165,250,.4); animation:phonePulse 1.4s ease-in-out infinite; }
+  .phone.done { background:radial-gradient(circle at center, rgba(52,211,153,.1) 0%, transparent 70%); border-color:rgba(52,211,153,.4); }
+  @keyframes phonePulse {
+    0%,100% { box-shadow:0 0 0 0 rgba(96,165,250,.3); }
+    50%     { box-shadow:0 0 0 12px rgba(96,165,250,0); }
+  }
+  .phone-status { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; margin-bottom:10px; }
+  .phone-headline { font-size:26px; font-weight:700; letter-spacing:-.01em; margin:4px 0 8px 0; }
+  .phone-sub { color:var(--muted); font-size:14px; }
+  .phone.calling .phone-headline { color:var(--blue); }
+  .phone.done .phone-headline { color:var(--green); }
+  .phone.awaiting { background:radial-gradient(circle at center, rgba(251,191,36,.12) 0%, transparent 70%); border-color:rgba(251,191,36,.45); }
+  .phone.awaiting .phone-headline { color:var(--yellow); }
+  .phone.failed { background:radial-gradient(circle at center, rgba(248,113,113,.1) 0%, transparent 70%); border-color:rgba(248,113,113,.4); }
+  .phone.failed .phone-headline { color:var(--red); }
+
+  .conn { position:fixed; top:14px; right:18px; display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); padding:4px 10px; border-radius:999px; background:var(--card); border:1px solid var(--border); z-index:10; }
+  .conn .dot { width:6px; height:6px; border-radius:50%; background:var(--red); }
+  .conn.online .dot { background:var(--green); }
+
+  /* Mom's app — phone-frame mock that streams Bolo activity notifications */
+  .moms-app { padding:0; overflow:hidden; }
+  .moms-app .moms-header { display:flex; align-items:center; justify-content:space-between; padding:18px 22px 14px 22px; border-bottom:1px solid var(--border); }
+  .moms-app .moms-header h3 { margin:0; }
+  .moms-app .moms-header .moms-tag { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; padding:3px 8px; border-radius:999px; border:1px solid var(--border); background:var(--card-2); }
+  .moms-screen { background:linear-gradient(180deg, #050505 0%, #0d0d12 100%); min-height:280px; padding:18px; display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; }
+  .moms-empty { color:var(--dim); font-style:italic; font-size:13px; text-align:center; padding:36px 12px; }
+  .moms-notif { background:rgba(28,28,32,.85); border:1px solid #2a2a2e; border-radius:12px; padding:12px 14px; backdrop-filter:blur(8px); animation:notifSlide 360ms cubic-bezier(.2,.7,.2,1); }
+  .moms-notif .row1 { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .moms-notif .app-icon { width:18px; height:18px; border-radius:5px; background:linear-gradient(135deg, #7c5cfc 0%, #5234c9 100%); flex-shrink:0; box-shadow:0 1px 4px rgba(124,92,252,.4); display:flex; align-items:center; justify-content:center; font-size:10px; color:white; font-weight:700; }
+  .moms-notif .src { font-size:11px; font-weight:600; color:var(--text); flex:1; }
+  .moms-notif .ts { font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .moms-notif .body { font-size:13px; color:var(--text); line-height:1.45; }
+  .moms-notif.kind-grants_ok { border-color:rgba(52,211,153,.3); }
+  .moms-notif.kind-grants_ok .app-icon { background:linear-gradient(135deg, #34d399 0%, #16a34a 100%); }
+  .moms-notif.kind-price_ok { border-color:rgba(52,211,153,.3); }
+  .moms-notif.kind-price_ok .app-icon { background:linear-gradient(135deg, #34d399 0%, #16a34a 100%); }
+  .moms-notif.kind-calling .app-icon { background:linear-gradient(135deg, #60a5fa 0%, #2563eb 100%); }
+  .moms-notif.kind-placed { border-color:rgba(52,211,153,.45); background:rgba(52,211,153,.06); }
+  .moms-notif.kind-placed .app-icon { background:linear-gradient(135deg, #34d399 0%, #16a34a 100%); }
+  .moms-notif.kind-audited .app-icon { background:linear-gradient(135deg, #c084fc 0%, #7c3aed 100%); }
+  .moms-notif.kind-approval_request { border-color:rgba(251,191,36,.55); background:rgba(251,191,36,.08); animation:notifSlide 360ms cubic-bezier(.2,.7,.2,1), notifPulse 2s ease-in-out 0.4s 3; }
+  .moms-notif.kind-approval_request .app-icon { background:linear-gradient(135deg, #fbbf24 0%, #d97706 100%); }
+  .moms-notif.kind-approval_request .src { color:#fbbf24; }
+  .moms-notif.kind-approval_request .approval-actions { display:flex; gap:6px; margin-top:10px; }
+  .moms-notif.kind-approval_request .approval-actions button { flex:1; padding:8px 8px; font-size:11px; font-weight:600; border-radius:8px; cursor:pointer; transition:transform 120ms ease, opacity 200ms ease; border:1px solid transparent; }
+  .moms-notif.kind-approval_request .btn-approve { background:#34d399; color:#062f1f; border-color:#10b981; }
+  .moms-notif.kind-approval_request .btn-deny { background:transparent; color:#e8e8ea; border-color:#3a3a3e; }
+  .moms-notif.kind-approval_request .btn-defer { background:transparent; color:#fbbf24; border-color:rgba(251,191,36,.4); }
+  .moms-notif.kind-deferred { border-color:rgba(124,92,252,.4); background:rgba(124,92,252,.05); }
+  .moms-notif.kind-deferred .app-icon { background:linear-gradient(135deg, #c084fc 0%, #7c3aed 100%); }
+  .moms-notif.kind-approval_request .approval-actions button:hover { transform:translateY(-1px); }
+  .moms-notif.kind-approval_request .approval-actions button:active { transform:translateY(0); opacity:.85; }
+  .moms-notif.kind-call_failed { border-color:rgba(248,113,113,.4); background:rgba(248,113,113,.05); }
+  .moms-notif.kind-call_failed .app-icon { background:linear-gradient(135deg, #f87171 0%, #b91c1c 100%); }
+  .moms-notif.kind-approved { border-color:rgba(52,211,153,.55); background:rgba(52,211,153,.08); }
+  .moms-notif.kind-approved .app-icon { background:linear-gradient(135deg, #34d399 0%, #16a34a 100%); }
+  .moms-notif.kind-approved .src { color:#34d399; }
+  @keyframes notifPulse {
+    0%,100% { box-shadow:0 0 0 0 rgba(251,191,36,0); }
+    50%     { box-shadow:0 0 0 6px rgba(251,191,36,.18); }
+  }
+  @keyframes notifSlide { from { opacity:0; transform:translateY(-8px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+  .moms-screen::-webkit-scrollbar { width:6px; }
+  .moms-screen::-webkit-scrollbar-thumb { background:#2a2a2a; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<div class="conn" id="conn"><span class="dot"></span><span id="conn-text">offline</span></div>
+
+<div class="app">
+  <!-- LEFT COLUMN: Ruby's input -->
+  <div class="col">
+    <div class="card">
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div class="wordmark">Ruby's Red Rover</div>
+        <span class="badge">DEEPMIND ROBOHACKS · WINNER</span>
+      </div>
+      <h1>Pizza Demo<span class="sep">·</span><span style="color:var(--accent-2)">v2</span></h1>
+      <p class="subtitle">Type a phrase. Watch the agent understand Ruby — in Ruby's voice.</p>
+      <div class="input-row">
+        <textarea id="phrase" rows="2" placeholder="What does Ruby want?">I want pizza</textarea>
+        <button class="primary" id="play-btn">▶ Ruby speaks</button>
+      </div>
+    </div>
+
+    <details class="about" open>
+      <summary>About this demo</summary>
+      <p>Ruby has cerebral palsy. Off-the-shelf voice models don't hear her. v1 of Ruby's Red Rover (DeepMind RoboHacks 2026 winner) read her emotions correctly. v2 — built today — lets her act in the world. The clip you generate plays in Ruby's cloned voice, fed into the same CP-aware pipeline.</p>
+      <p class="note">Voice cloning used with Ruby's family's full consent, for demo purposes only.</p>
+    </details>
+  </div>
+
+  <!-- RIGHT COLUMN: Agent reasoning -->
+  <div class="col">
+    <div class="right-header">
+      <h2>Agent reasoning</h2>
+      <div class="mood-ring idle" id="mood-ring" title="idle"></div>
+    </div>
+
+    <div class="card">
+      <h3>1 · Voice In</h3>
+      <div class="voice-text empty" id="voice-text">awaiting input…</div>
+      <div class="conf-row">
+        <div class="conf-label">Confidence</div>
+        <div class="conf-bar"><div class="conf-fill" id="conf-fill"></div></div>
+        <div class="conf-pct" id="conf-pct">—</div>
+      </div>
+      <div class="clarify" id="clarify">Clarifying question pending…</div>
+    </div>
+
+    <div class="card">
+      <h3>2 · Bolo Grant Checks</h3>
+      <div class="grants" id="grants"></div>
+    </div>
+
+    <div class="card">
+      <h3>3 · Live Event Log</h3>
+      <div class="log" id="log"></div>
+    </div>
+
+    <div class="card phone idle" id="phone">
+      <div class="phone-status" id="phone-status">Phone · idle</div>
+      <div class="phone-headline" id="phone-headline">Standing by</div>
+      <div class="phone-sub" id="phone-sub">Waiting for Ruby's request…</div>
+    </div>
+
+    <div class="card moms-app">
+      <div class="moms-header">
+        <h3>4 · Mom's app · live via Bolo</h3>
+        <span class="moms-tag">@mom</span>
+      </div>
+      <div class="moms-screen" id="moms-screen">
+        <div class="moms-empty" id="moms-empty">No activity yet — notifications appear here as the agent acts on Ruby's behalf.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const GRANT_SCOPES = [
+    'voice_consent:ruby',
+    'actions:order_food',
+    'payment:charge',
+    'vendors:allowlist',
+    'dietary:restrictions',
+    'communications:notify_mom',
+    'voice_gift:chantal',
+  ];
+  // Friendly labels for each grant tile (otherwise the raw key is shown)
+  const GRANT_LABELS = {
+    'voice_consent:ruby':        { label: 'Ruby’s voice',  grantor: '@ruby' },
+    'actions:order_food':        { label: 'Order food',         grantor: '@mom' },
+    'payment:charge':            { label: 'Payment',            grantor: '@mom' },
+    'vendors:allowlist':         { label: 'Vendor allowlist',   grantor: '@mom' },
+    'dietary:restrictions':      { label: 'Dietary',            grantor: '@mom' },
+    'communications:notify_mom': { label: 'Notify mom',         grantor: '@mom' },
+    'voice_gift:chantal':        { label: 'Voice gift',         grantor: '@chantal' },
+  };
+
+  const grantsEl = document.getElementById('grants');
+  const grantNodes = {};
+  GRANT_SCOPES.forEach(scope => {
+    const meta = GRANT_LABELS[scope] || { label: scope, grantor: '' };
+    const div = document.createElement('div');
+    div.className = 'grant';
+    div.innerHTML = `
+      <span class="icon">○</span>
+      <div class="scope" style="color:var(--text);font-weight:500;font-family:inherit;font-size:13px;">${meta.label}</div>
+      <div style="font-size:10px;color:var(--dim);font-family:ui-monospace,monospace;margin-top:2px;">${meta.grantor} · ${scope}</div>
+      <div class="value"></div>`;
+    grantsEl.appendChild(div);
+    grantNodes[scope] = div;
+  });
+
+  const moodRing = document.getElementById('mood-ring');
+  const voiceText = document.getElementById('voice-text');
+  const confFill = document.getElementById('conf-fill');
+  const confPct = document.getElementById('conf-pct');
+  const clarify = document.getElementById('clarify');
+  const logEl = document.getElementById('log');
+  const phone = document.getElementById('phone');
+  const phStatus = document.getElementById('phone-status');
+  const phHead = document.getElementById('phone-headline');
+  const phSub = document.getElementById('phone-sub');
+  const playBtn = document.getElementById('play-btn');
+  const phraseIn = document.getElementById('phrase');
+  const conn = document.getElementById('conn');
+  const connText = document.getElementById('conn-text');
+  const momsScreen = document.getElementById('moms-screen');
+  const momsEmpty = document.getElementById('moms-empty');
+
+  const escapeHtml = s => String(s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c]);
+
+  function setMood(state) { moodRing.className = 'mood-ring ' + state; moodRing.title = state; }
+
+  function appendLog(ev, payload) {
+    const t = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const body = payload ? ' ' + escapeHtml(JSON.stringify(payload)) : '';
+    const line = document.createElement('div');
+    line.className = 'line';
+    line.innerHTML = `<span class="ts">${t}</span><span class="ev">${escapeHtml(ev)}</span>${body}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setVoice(text, confidence) {
+    if (text) { voiceText.textContent = text; voiceText.classList.remove('empty'); }
+    if (typeof confidence === 'number') {
+      const pct = Math.round(confidence * 100);
+      confFill.style.width = pct + '%';
+      confPct.textContent = pct + '%';
+    }
+  }
+
+  function setClarify(text) {
+    if (text) { clarify.textContent = text; clarify.classList.add('active'); }
+    else clarify.classList.remove('active');
+  }
+
+  function setGrant(scope, state, value) {
+    const node = grantNodes[scope];
+    if (!node) return;
+    node.classList.remove('checking', 'granted');
+    const icon = node.querySelector('.icon');
+    const val = node.querySelector('.value');
+    if (state === 'checking') { node.classList.add('checking'); icon.textContent = '⏳'; }
+    else if (state === 'granted') {
+      node.classList.add('granted');
+      icon.textContent = '✓';
+      val.textContent = value != null ? (typeof value === 'string' ? value : JSON.stringify(value)) : '';
+    } else { icon.textContent = '○'; val.textContent = ''; }
+  }
+
+  function appendMomsNotif(message, kind, details) {
+    if (momsEmpty && momsEmpty.parentNode) momsEmpty.remove();
+    const t = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const div = document.createElement('div');
+    div.className = 'moms-notif kind-' + (kind || 'info');
+    const isApproval = kind === 'approval_request';
+    const isApproved = kind === 'approved';
+    let srcLabel = "Bolo · Ruby's Red Rover";
+    if (isApproval) srcLabel = 'Bolo · Approval needed';
+    if (isApproved) srcLabel = 'Bolo · You approved';
+    const amt = (details && typeof details.requested_amount === 'number') ? details.requested_amount : null;
+    const amtLabel = amt != null ? `$${amt.toFixed(2)}` : '$';
+    const showDefer = isApproval && details && details.live === true && !details.no_defer;
+    const actions = isApproval
+      ? `<div class="approval-actions">
+           <button class="btn-deny" data-action="deny">Decline</button>
+           ${showDefer ? `<button class="btn-defer" data-action="defer">Call back later</button>` : ''}
+           <button class="btn-approve" data-action="approve" data-amount="${amt != null ? amt : ''}">Approve ${amtLabel}</button>
+         </div>`
+      : '';
+    div.innerHTML = `
+      <div class="row1">
+        <div class="app-icon">B</div>
+        <div class="src">${srcLabel}</div>
+        <div class="ts">${t}</div>
+      </div>
+      <div class="body">${escapeHtml(message || '')}</div>${actions}`;
+
+    if (isApproval) {
+      const approveBtn = div.querySelector('button[data-action="approve"]');
+      const denyBtn = div.querySelector('button[data-action="deny"]');
+      const deferBtn = div.querySelector('button[data-action="defer"]');
+      const lockAll = () => {
+        if (approveBtn) approveBtn.disabled = true;
+        if (denyBtn) denyBtn.disabled = true;
+        if (deferBtn) deferBtn.disabled = true;
+      };
+      approveBtn?.addEventListener('click', async () => {
+        lockAll();
+        approveBtn.textContent = `✓ Approved ${amtLabel}`;
+        try {
+          await fetch('/demo/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: amt ?? 0, call_id: details?.call_id || null }),
+          });
+        } catch (e) { console.error('approve failed', e); }
+      });
+      denyBtn?.addEventListener('click', async () => {
+        lockAll();
+        denyBtn.textContent = '✗ Declined';
+        try {
+          await fetch('/demo/decline', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ call_id: details?.call_id || null }),
+          });
+        } catch (e) { console.error('decline failed', e); }
+      });
+      deferBtn?.addEventListener('click', async () => {
+        lockAll();
+        deferBtn.textContent = '↺ Call back later';
+        try {
+          await fetch('/demo/defer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ call_id: details?.call_id || null, amount: amt ?? 0 }),
+          });
+        } catch (e) { console.error('defer failed', e); }
+      });
+    }
+    momsScreen.appendChild(div);
+    momsScreen.scrollTop = momsScreen.scrollHeight;
+  }
+
+  function clearMomsScreen() {
+    momsScreen.innerHTML = '';
+    momsScreen.appendChild(momsEmpty);
+  }
+
+  function setPhone(state, opts = {}) {
+    phone.classList.remove('idle', 'calling', 'done', 'awaiting', 'failed');
+    phone.classList.add(state);
+    if (state === 'idle') {
+      phStatus.textContent = 'Phone · idle';
+      phHead.textContent = 'Standing by';
+      phSub.textContent = 'Waiting for Ruby\'s request…';
+    } else if (state === 'calling') {
+      phStatus.textContent = 'Phone · live call';
+      phHead.textContent = '📞 RINGING — ' + (opts.vendor || 'Folino\'s');
+      phSub.textContent = opts.number || '+1 (415) ••• ••42';
+    } else if (state === 'awaiting') {
+      phStatus.textContent = 'Phone · awaiting mom';
+      phHead.textContent = '⏸ Order paused';
+      phSub.textContent = opts.summary || 'Chantal escalated to Mom for approval.';
+    } else if (state === 'failed') {
+      phStatus.textContent = 'Phone · call did not connect';
+      phHead.textContent = '✗ Call ended without an order';
+      phSub.textContent = opts.summary || 'Try again or check the line.';
+    } else if (state === 'done') {
+      phStatus.textContent = 'Phone · order placed';
+      phHead.textContent = '✓ Order confirmed';
+      phSub.textContent = opts.summary || 'Order received. ETA 22 minutes.';
+    }
+  }
+
+  function handleEvent(msg) {
+    const { event, data = {} } = msg;
+    appendLog(event, data);
+    switch (event) {
+      case 'reset':
+        setMood('idle');
+        voiceText.textContent = 'awaiting input…';
+        voiceText.classList.add('empty');
+        confFill.style.width = '0%'; confPct.textContent = '—';
+        setClarify(null);
+        GRANT_SCOPES.forEach(s => setGrant(s, 'idle'));
+        setPhone('idle');
+        clearMomsScreen(); break;
+      case 'mom_notification': appendMomsNotif(data.message, data.kind, data.details || {}); break;
+      case 'thinking': case 'transcribing': setMood('thinking'); break;
+      case 'voice_in': case 'transcript': setVoice(data.text, data.confidence); setMood('thinking'); break;
+      case 'clarify': setClarify(data.question || 'Clarifying question pending…'); break;
+      case 'clarify_resolved': setClarify(null); break;
+      case 'grant_check_start': setGrant(data.scope, 'checking'); setMood('thinking'); break;
+      case 'grant_check_done': setGrant(data.scope, 'granted', data.value); break;
+      case 'calling': setMood('calling'); setPhone('calling', { vendor: data.vendor, number: data.number }); break;
+      case 'done': case 'order_placed': {
+        const outcome = data.outcome || 'success';
+        if (outcome === 'needs_mom_approval') { setMood('thinking'); setPhone('awaiting', { summary: data.summary }); }
+        else if (outcome === 'call_failed')   { setMood('idle');     setPhone('failed',   { summary: data.summary }); }
+        else                                   { setMood('done');     setPhone('done',     { summary: data.summary }); }
+        break;
+      }
+    }
+  }
+
+  let ws = null;
+  function connect() {
+    try { ws = new WebSocket('ws://localhost:8000/ws'); }
+    catch (e) { scheduleReconnect(); return; }
+    ws.onopen = () => { conn.classList.add('online'); connText.textContent = 'connected'; appendLog('ws_open', { url: 'ws://localhost:8000/ws' }); };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg && msg.event) handleEvent(msg);
+        else appendLog('message', msg);
+      } catch (_) { appendLog('raw', { data: String(e.data).slice(0, 200) }); }
+    };
+    ws.onclose = () => { conn.classList.remove('online'); connText.textContent = 'offline · reconnecting…'; appendLog('ws_close', null); scheduleReconnect(); };
+    ws.onerror = () => {};
+  }
+  function scheduleReconnect() { setTimeout(connect, 1000); }
+  connect();
+
+  playBtn.addEventListener('click', async () => {
+    const text = (phraseIn.value || '').trim();
+    if (!text) return;
+    playBtn.disabled = true;
+    setMood('thinking');
+    appendLog('play_request', { text });
+    try {
+      const res = await fetch('/demo/play', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      appendLog('play_response', { status: res.status });
+    } catch (err) {
+      appendLog('play_error', { message: String(err && err.message || err) });
+    } finally {
+      setTimeout(() => { playBtn.disabled = false; }, 800);
+    }
+  });
+
+  phraseIn.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') playBtn.click();
+  });
+
+  GRANT_SCOPES.forEach(s => setGrant(s, 'idle'));
+  setMood('idle');
+})();
+</script>
+</body>
+</html>

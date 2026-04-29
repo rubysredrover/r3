@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rubys-red-rover-agent"
+version = "0.1.0"
+description = "v2 agent layer for Ruby's Red Rover — Claude Agent SDK orchestrator with Bolo trust layer and CP-aware voice."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "websockets",
+    "anthropic>=0.39.0",
+    "google-generativeai>=0.8.0",
+    "httpx",
+    "python-dotenv",
+    "elevenlabs>=1.0.0",
+    "imageio-ffmpeg",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+include = ["server*"]
