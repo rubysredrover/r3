@@ -1,5 +1,17 @@
 <div align="center">
 
+> ## 🆕 Today — April 29, 2026
+> ## **v2 ships: Ruby orders her own pizza.**
+>
+> Built today at **[Build YC's Next Unicorn — AWS Builder Loft, San Francisco](https://lu.ma/buildycnext)**.
+>
+> v1 (below) read Ruby's emotions correctly. v2 lets her **act on them** — a Claude-orchestrated voice agent that places real phone orders gated by peer-to-peer Bolo grants from the people who love her. Three real-people grants (Mom's spending cap, Ruby's voice consent, DJ-friend Chantal's donated voice), two cloned voices, one agent loop, and one phone that actually rings. When the order goes over Mom's budget, Chantal pauses mid-call to ask Mom audibly — Mom approves on her phone, the answer drops back into the live call, and the order continues. The trust layer isn't a slide; it's the runtime.
+>
+> 🔗 **[Full v2 README + run instructions →](agent/README.md)**
+> &nbsp;·&nbsp; 🐍 [Server](agent/server/main.py) &nbsp;·&nbsp; 🌐 [Web panel](agent/web/index.html) &nbsp;·&nbsp; 📋 [Plan & status](agent/PLAN.md)
+
+---
+
 <img src="docs/ruby/20240705_201856.jpg" alt="Ruby" width="280" style="border-radius: 50%; object-fit: cover;" />
 
 # Ruby's Red Rover
