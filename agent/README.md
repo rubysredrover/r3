@@ -6,6 +6,13 @@
 
 <br>
 
+> **🏆 Built today (April 29, 2026) at [Build YC's Next Unicorn — AWS Builder Loft, San Francisco](https://lu.ma/buildycnext).**
+>
+> A live, voice-driven, peer-to-peer-trust-gated ordering agent — built and shipped in a single session.
+> Three real-people grants, two cloned voices, one agent loop, one phone that actually rings.
+
+<br>
+
 [![Built at AWS Builder Loft 2026](https://img.shields.io/badge/Built_at-AWS_Builder_Loft_2026-FF9900?style=for-the-badge&labelColor=1a1a1a)](https://lu.ma/buildycnext)
 &nbsp;
 [![Powered by Claude Agent SDK](https://img.shields.io/badge/Powered_by-Claude_Agent_SDK-d97757?style=for-the-badge&labelColor=1a1a1a)](https://www.anthropic.com)

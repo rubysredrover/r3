@@ -109,7 +109,7 @@ async def _watch_call_with_mom_trigger(
     max_per_order: float,
     vendor: str,
     on_status,
-    interval: float = 1.5,
+    interval: float = 0.6,
     max_seconds: int = 600,
 ) -> dict[str, Any]:
     """Poll a live Vapi call, watching the transcript for Chantal's
@@ -158,13 +158,23 @@ async def _watch_call_with_mom_trigger(
                 logger.info("MOM-TRIGGER detected for call %s — firing approval card", call_id)
                 triggered = True
 
-                # Extract the highest dollar amount Folino's quoted
+                # Extract dollar amounts. Two patterns: "$X" and "X dollars" /
+                # "X bucks". Take the MAX since Folino's actual quote should
+                # always be the highest number mentioned (Chantal rounds her
+                # ask up to it, never above by more than 5).
                 import re
-                amounts = re.findall(r"\$\s?(\d+(?:\.\d{2})?)", transcript_lc)
+                pat1 = re.findall(r"\$\s?(\d+(?:\.\d{1,2})?)", transcript_lc)
+                pat2 = re.findall(r"(\d+(?:\.\d{1,2})?)\s+(?:dollars?|bucks?)\b", transcript_lc)
+                all_amounts = pat1 + pat2
                 try:
-                    requested = max(float(a) for a in amounts) if amounts else None
+                    requested = max(float(a) for a in all_amounts) if all_amounts else None
                 except ValueError:
                     requested = None
+                # Round UP to next $5 mark (matches Chantal's prompt logic),
+                # so the panel shows the same amount Chantal asked Mom for.
+                if requested is not None:
+                    import math
+                    requested = float(math.ceil(requested / 5.0) * 5)
                 amount_str = f"${requested:.2f}" if requested else "over your cap"
 
                 # Fire the approval card on Mom's app, including call_id so the
@@ -240,10 +250,10 @@ async def _notify_mom(broadcast: BroadcastFn, message: str, kind: str = "info",
                       details: dict[str, Any] | None = None) -> None:
     """Push to Bolo's activity feed AND mirror it to the demo panel.
 
-    Mom granted Ruby's agent these permissions through Bolo; Bolo keeps her in
-    the loop on every action it takes on her behalf. The web panel listens for
-    `mom_notification` events to render the "Mom's app" mock alongside the
-    agent's reasoning, so the room sees both views in real time.
+    Bolo is the trust + comms backbone — same layer that holds the grants
+    relays the activity feed back to the granting party. Mom sees every
+    action her agent takes, and the audit trail lives in Bolo as the source
+    of truth. Synchronous so panel and Bolo audit stay in lockstep.
     """
     await bolo.notify_mom(message, kind=kind, details=details)
     await _emit(broadcast, "mom_notification", {
