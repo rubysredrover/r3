@@ -120,6 +120,7 @@ async def _watch_call_with_mom_trigger(
     triggered = False
     last_status = None
     elapsed = 0.0
+    _live_decision: dict[str, Any] | None = None
 
     while elapsed < max_seconds:
         info = await phone.get_call_status(call_id)
@@ -132,6 +133,10 @@ async def _watch_call_with_mom_trigger(
             last_status = status
 
         if status == "ended":
+            # Tag the result so the outer orchestrator knows whether the live
+            # mid-call approval flow already handled the "ask mom" branch.
+            info["_live_decision"] = _live_decision
+            info["_live_handled"] = _live_decision is not None
             return info
 
         if not triggered:
@@ -214,6 +219,11 @@ async def _watch_call_with_mom_trigger(
                     await phone.say_into_call(control_url, say_msg, end_after=end_after)
                 else:
                     logger.warning("no control_url — cannot inject mom's answer mid-call")
+
+                # Stash the resolved decision on the next polled state so the
+                # outer orchestrator knows the live approval already happened
+                # and doesn't fire a duplicate post-call approval card.
+                _live_decision = decision
 
         await asyncio.sleep(interval)
         elapsed += interval
@@ -465,9 +475,13 @@ async def run_agent(audio_input_path: str, broadcast: BroadcastFn) -> dict[str, 
         f"{card_block}\n"
         "\n"
         "HOW THE CALL SHOULD GO:\n"
-        "  • Wait for them to say hello / greet you first. Then place your\n"
-        "    order naturally: \"Hi! Yeah, can I get a large pepperoni for\n"
-        "    delivery please?\"\n"
+        "  • DO NOT SAY ANYTHING when the call first connects. Wait for\n"
+        "    Folino's to say something first — they'll say something like\n"
+        "    \"Folino's, can I help you?\" or \"Hello, Folino's.\" Only\n"
+        "    AFTER they greet you, then place your order naturally:\n"
+        "      \"Hi! Yeah, can I get a large pepperoni for delivery please?\"\n"
+        "    Speaking first sounds like a robocall and gets hung up on.\n"
+        "    Wait for the human voice. Always.\n"
         "  • Always ask the total BEFORE giving the address or card. Just\n"
         "    say something natural like \"What's the total gonna be?\" or\n"
         "    \"With delivery and everything, what's that come to?\"\n"
@@ -606,11 +620,37 @@ async def run_agent(audio_input_path: str, broadcast: BroadcastFn) -> dict[str, 
         (m.get("message") or "") for m in msgs if isinstance(m, dict)
     ).lower()
 
-    needs_mom_approval = (
+    # If the live mid-call watcher already handled the "ask mom" branch
+    # (Mom approved/declined/deferred during the live call), don't re-fire a
+    # post-call approval card. Branch on the already-resolved decision instead.
+    live_handled = bool(final_state.get("_live_handled"))
+    live_decision = final_state.get("_live_decision") or {}
+
+    needs_mom_approval = (not live_handled) and (
         "ask my mom" in transcript_lc
         or "check with my mom" in transcript_lc
         or "ask mom" in transcript_lc
     )
+
+    # Branch on outcomes from a LIVE mid-call mom approval (handled inline):
+    if live_handled and live_decision.get("deferred"):
+        summary = "Mom asked Chantal to call Folino's back later. Approval still pending."
+        await _emit(broadcast, "done", {"summary": summary, "outcome": "needs_mom_approval"})
+        return {"summary": summary, "outcome": "needs_mom_approval",
+                "transcription": transcription, "grant_results": grant_results,
+                "call_result": call_result, "final_state": final_state}
+    if live_handled and not live_decision.get("approved"):
+        await _notify_mom(
+            broadcast,
+            "Mom declined the bump live on the call. No order placed.",
+            kind="call_failed",
+            details={"call_id": call_id, "live": True},
+        )
+        summary = "Mom declined the bump on the call. No order placed."
+        await _emit(broadcast, "done", {"summary": summary, "outcome": "call_failed"})
+        return {"summary": summary, "outcome": "call_failed",
+                "transcription": transcription, "grant_results": grant_results,
+                "call_result": call_result, "final_state": final_state}
 
     if needs_mom_approval:
         import re
