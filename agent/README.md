@@ -6,8 +6,9 @@
 
 <br>
 
-> **🏆 Built today (April 29, 2026) at [Build YC's Next Unicorn — AWS Builder Loft, San Francisco](https://lu.ma/buildycnext).**<p>
-> ** 🏆 🏆 🏆 🏆 🏆 🏆 🏆 WINNER: Third Place🏆 🏆 🏆 🏆 🏆 🏆 🏆 **
+> **🏆 Built today (April 29, 2026) at**<p>
+> [Build YC's Next Unicorn — AWS Builder Loft, San Francisco](https://lu.ma/buildycnext).**<p>
+>  🏆 🏆 🏆 🏆 🏆 🏆 🏆 WINNER: Third Place🏆 🏆 🏆 🏆 🏆 🏆 🏆 
 > 
 > A live, voice-driven, peer-to-peer-trust-gated ordering agent — built and shipped in a single session.
 > Three real-people grants, two cloned voices, one agent loop, one phone that actually rings.
